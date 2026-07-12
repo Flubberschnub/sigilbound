@@ -1,42 +1,66 @@
-# Sigilbound: Arcane Duel
+# Sigilbound: Arcane Architecture
 
-A small native Android prototype for a real-time three-lane spellcasting duel. Players draw elemental glyphs, compile them into spell sentences, attach generic behavior clauses, and deploy the result into a live lane.
+Sigilbound is a native Android prototype for a real-time three-lane spellcasting duel. Players hand-write elemental sigils, choose a form rune, attach ordered behavior clauses, commit the sentence to a lane, and cast it into an arena whose ley geometry can be reshaped by both duelists.
 
-## What changed in v1.3
+## Version 1.4 highlights
 
-- The rival visibly writes each spell before launch: target lane, progressive element glyphs, form, clauses, countdown, and channel progress.
-- Projectile travel speed is controlled by a match rule: **Ritual**, **Duel**, or **Blitz**. Ritual is the default and is substantially slower.
-- Manual spell cores accept up to three ordered elements.
-- Generic clauses—**Echo**, **Fork**, and **Anchor**—operate on every element sequence and every form.
-- Three editable **executables** can be prepared in the Grimoire and deployed quickly during combat.
-- Executables cost 25% extra mana, consume Ink, and have cooldowns. Accurate manual glyphs restore Ink.
-- Manual formulas no longer expire.
-- The interface uses the plain Android sans-serif family, medium rather than synthetic bold weight, and larger minimum mobile text sizes.
+- Eight drawable elements: **Fire, Water, Wind, Stone, Frost, Lightning, Aether, and Void**.
+- Four ordered element slots. Later sigils remain meaningful but contribute less strongly, and the Prism Lens changes that weighting.
+- Six forms: **Lance, Ward, Orbit, Burst, Beam, and Glyph**.
+- Eight clauses: **Echo, Fork, Anchor, Seek, Relay, Trigger, Bind, and Consume**. A sentence can hold three clauses in order.
+- Three contestable ley nodes—one per lane—which store elemental profiles and modify spells that pass through them.
+- Persistent fields, traps, enchantments, constructs, beams, projectiles, and node relays can modify one another after deployment.
+- Four arena rulesets with distinct ambient channels and tactical biases.
+- An unlimited persistent executable library with scrolling, duplication, deletion, editing, and a four-card combat quick-select ribbon.
+- A five-stage mobile composer: **Sigils → Form → Clauses → Lane → Cast**.
+- Rebuilt modern-fantasy presentation using dark metal panels, restrained gold trim, animated arcane geometry, colored spell trails, bloom-like Canvas effects, impact particles, field inscriptions, and readable sans-serif typography.
 
 ## Spell language
 
+```text
+[1–4 ordered elemental sigils]
+→ [one form rune]
+→ [0–3 ordered clauses]
+→ [one lane]
+→ CAST
 ```
-[core element] [modifier element?] [modifier element?]
-+ [clause?] [clause?]
-+ [lane]
-+ [form]
-```
 
-Element order matters because later glyphs contribute less weight. The compiler derives continuous channels instead of selecting a fixed pair recipe:
+The compiler does not select a named recipe from a lookup table. Each sigil adds weighted values to ten channels:
 
-- Fire: heat, volatility, some impulse
-- Water: moisture, cohesion, heat damping
-- Wind: impulse, volatility
-- Stone: mass, cohesion, impulse damping
+- heat
+- moisture
+- impulse
+- mass
+- cohesion
+- volatility
+- cold
+- charge
+- aether
+- entropy
 
-Thresholds create vapor, molten residue, chilling drag, and fracture. Those properties then affect Lance, Ward, Orbit, and Burst through shared rules. See [`docs/SPELL_SYSTEM.md`](docs/SPELL_SYSTEM.md).
+Forms interpret those channels differently. Runtime entities then continue to gain, lose, merge, relay, bind, or consume channel data through fields, nodes, clauses, and collisions. This produces reactions such as steam veils, thermal shock, conduction, molten fields, blizzards, shatter, null flux, corrosion, and resonance without requiring a bespoke spell entry for every combination.
+
+See [`docs/SPELL_SYSTEM.md`](docs/SPELL_SYSTEM.md) for the compiler and interaction rules and [`GAME_DESIGN.md`](GAME_DESIGN.md) for the full combat design.
+
+## Executable library
+
+The Grimoire has no fixed slot count. Any valid sentence can be saved, duplicated, edited, or deleted. During combat, four programs are shown at a time and the player can page through the complete library.
+
+Executables trade flexibility for speed:
+
+- one Ink per deployment;
+- a mana surcharge;
+- an individual cooldown;
+- manual writing is still required to rebuild Ink efficiently.
+
+The Mnemonic Crown reduces the mana surcharge but lowers manual Ink recovery, while other artifacts encourage different compiler and arena strategies.
 
 ## Build
 
 Requirements:
 
 - JDK 17
-- Android SDK platform 36 and Build Tools 36.0.0
+- Android SDK platform 36
 - Gradle 9.4.1
 
 ```bash
@@ -47,15 +71,20 @@ The debug APK is copied to `dist/Sigilbound-Arcane-Duel-debug.apk`.
 
 ## Automation
 
-- `.github/workflows/android-ci.yml` runs Android lint and builds an APK on every push and pull request, then uploads the APK and lint report.
+- `.github/workflows/android-ci.yml` runs lint and builds a debug APK on pushes and pull requests, then uploads the APK and lint reports.
 - `.github/workflows/release.yml` creates an installable debug-signed GitHub Release for tags matching `v*`.
 
 ## Architecture
 
-The prototype intentionally has no engine or third-party runtime. `ArcaneDuelView` owns rendering, touch recognition, simulation, AI, and tutorial state using Android Canvas primitives. That keeps the APK tiny, though a production version should split the compiler, combat simulation, rendering, and networking into testable modules.
+- `SpellSystem.java` owns spell syntax, profile compilation, serialization, costs, and glyph recognition.
+- `ArcaneDuelView.java` owns the prototype simulation, AI, input flow, persistence, and procedural rendering.
+- `MainActivity.java` hosts the full-screen custom view.
+
+The project deliberately has no third-party runtime. A production multiplayer version should split deterministic combat simulation, rendering, persistence, matchmaking, and network transport into separate modules.
 
 ## Current scope
 
-- AI duels are implemented.
-- Network multiplayer is not implemented in this standalone prototype.
-- The APK is portrait-only and uses procedural artwork.
+- AI duels and practice mode are implemented.
+- Network multiplayer is not yet implemented.
+- The application is portrait-only.
+- Visuals are generated procedurally with Android Canvas primitives.
