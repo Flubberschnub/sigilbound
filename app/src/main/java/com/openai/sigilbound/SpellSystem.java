@@ -9,12 +9,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Data-driven spell language for Sigilbound v1.4.
+ * Data-driven spell language for Sigilbound v2.0.
  *
  * A spell is compiled from ordered elemental sigils, one form rune, and ordered
  * behavior clauses. Elements contribute continuous channels; forms and clauses
  * interpret those channels. Runtime reactions compare channels instead of
- * selecting bespoke element-pair recipes.
+ * selecting bespoke element-pair recipes, and persistent objects (fields,
+ * traps, wards, glyphs, rifts, and auras) keep modifying each other after they
+ * resolve.
  */
 final class SpellSystem {
     private SpellSystem() {}
@@ -27,7 +29,9 @@ final class SpellSystem {
         FROST("Frost", "diamond", Color.rgb(151, 220, 255), "cold • brittleness"),
         LIGHTNING("Lightning", "bolt", Color.rgb(244, 220, 92), "charge • velocity"),
         AETHER("Aether", "circle", Color.rgb(184, 128, 255), "resonance • linking"),
-        VOID("Void", "cross", Color.rgb(226, 78, 170), "entropy • consumption");
+        VOID("Void", "cross", Color.rgb(226, 78, 170), "entropy • consumption"),
+        RADIANCE("Radiance", "arch", Color.rgb(255, 243, 196), "revelation • searing light"),
+        VERDANCE("Verdance", "sprout", Color.rgb(105, 208, 92), "growth • entanglement");
 
         final String label;
         final String glyphHint;
@@ -48,7 +52,10 @@ final class SpellSystem {
         ORBIT("Orbit", "repeating familiar", 19f),
         BURST("Burst", "delayed field event", 21f),
         BEAM("Beam", "fast piercing channel", 18f),
-        GLYPH("Glyph", "ley-field inscription", 17f);
+        GLYPH("Glyph", "ley-field inscription", 17f),
+        SURGE("Surge", "wavefront that shoves", 15f),
+        RIFT("Rift", "lane-rewriting portal", 20f),
+        AURA("Aura", "global enchantment", 22f);
 
         final String label;
         final String subtitle;
@@ -69,7 +76,11 @@ final class SpellSystem {
         RELAY("Relay", "route through ley nodes", 6f),
         TRIGGER("Trigger", "wait for hostile entry", 5f),
         BIND("Bind", "enchant an allied spell", 6f),
-        CONSUME("Consume", "sacrifice field for power", 4f);
+        CONSUME("Consume", "sacrifice field for power", 4f),
+        SWIFT("Swift", "faster, leaner body", 4f),
+        SIPHON("Siphon", "drain what it crosses", 6f),
+        HEX("Hex", "curse a hostile object", 6f),
+        DISPEL("Dispel", "erase a hostile spell", 5f);
 
         final String label;
         final String subtitle;
@@ -87,7 +98,9 @@ final class SpellSystem {
         ASHEN_QUILL("Ashen Quill", "clean glyphs surge and restore Ink"),
         AEGIS_BELL("Aegis Bell", "wards and familiars are reinforced"),
         LEY_KEY("Ley Key", "nodes charge faster; Relay is cheaper"),
-        MNEMONIC_CROWN("Mnemonic Crown", "executables cost less mana, restore less Ink");
+        MNEMONIC_CROWN("Mnemonic Crown", "executables cost less mana, restore less Ink"),
+        HEXWRIGHT_RING("Hexwright Ring", "Hex, Dispel, and Siphon strike deeper"),
+        VERDANT_CHALICE("Verdant Chalice", "growth surges; overgrowth mends the caster");
 
         final String label;
         final String subtitle;
@@ -142,7 +155,11 @@ final class SpellSystem {
         TIDAL_ARCHIVE("Tidal Archive", "water channels slow travel and conduct charge",
                 Color.rgb(42, 102, 132), Color.rgb(20, 48, 70)),
         SHATTERED_CROWN("Shattered Crown", "fractured bridges favor forks and unstable impacts",
-                Color.rgb(115, 79, 126), Color.rgb(46, 31, 58));
+                Color.rgb(115, 79, 126), Color.rgb(46, 31, 58)),
+        VERDANT_REACH("Verdant Reach", "living ley roots mend constructs and entangle spells",
+                Color.rgb(66, 124, 70), Color.rgb(24, 50, 32)),
+        RADIANT_BASILICA("Radiant Basilica", "shafts of consecrated light empower beams and burst casts",
+                Color.rgb(158, 126, 62), Color.rgb(66, 52, 26));
 
         final String label;
         final String subtitle;
@@ -158,7 +175,7 @@ final class SpellSystem {
     }
 
     enum Kind {
-        PROJECTILE, WARD, ORBIT, BURST, BEAM, GLYPH, FIELD, TRAP, ENCHANTMENT, SHARD
+        PROJECTILE, WARD, ORBIT, BURST, BEAM, GLYPH, FIELD, TRAP, ENCHANTMENT, SHARD, SURGE, RIFT, AURA
     }
 
     static final class Program {
@@ -212,6 +229,8 @@ final class SpellSystem {
         float charge;
         float aether;
         float entropy;
+        float radiance;
+        float growth;
 
         float steam;
         float magma;
@@ -222,6 +241,10 @@ final class SpellSystem {
         float corrosion;
         float resonance;
         float thermalShock;
+        float wildfire;
+        float overgrowth;
+        float sanctify;
+        float eclipse;
 
         String label = "";
 
@@ -237,6 +260,8 @@ final class SpellSystem {
             p.charge = charge;
             p.aether = aether;
             p.entropy = entropy;
+            p.radiance = radiance;
+            p.growth = growth;
             p.recalculate();
             p.label = label;
             return p;
@@ -254,6 +279,8 @@ final class SpellSystem {
             charge += other.charge * amount;
             aether += other.aether * amount;
             entropy += other.entropy * amount;
+            radiance += other.radiance * amount;
+            growth += other.growth * amount;
             recalculate();
         }
 
@@ -268,17 +295,20 @@ final class SpellSystem {
             charge *= scale;
             aether *= scale;
             entropy *= scale;
+            radiance *= scale;
+            growth *= scale;
             recalculate();
         }
 
         float force() {
             return 1f + heat * 0.12f + impulse * 0.14f + mass * 0.13f
-                    + charge * 0.14f + volatility * 0.08f + aether * 0.06f;
+                    + charge * 0.14f + volatility * 0.08f + aether * 0.06f
+                    + radiance * 0.11f + growth * 0.03f;
         }
 
         float stability() {
-            return Math.max(0.35f, 1f + cohesion * 0.24f + mass * 0.08f
-                    - volatility * 0.12f - entropy * 0.10f);
+            return Math.max(0.35f, 1f + cohesion * 0.24f + mass * 0.08f + growth * 0.10f
+                    + radiance * 0.04f - volatility * 0.12f - entropy * 0.10f);
         }
 
         String dominantReaction() {
@@ -291,6 +321,10 @@ final class SpellSystem {
             if (blizzard > best) { best = blizzard; result = "Blizzard"; }
             if (nullFlux > best) { best = nullFlux; result = "Null Flux"; }
             if (corrosion > best) { best = corrosion; result = "Corrosion"; }
+            if (wildfire > best) { best = wildfire; result = "Wildfire"; }
+            if (overgrowth > best) { best = overgrowth; result = "Overgrowth"; }
+            if (sanctify > best) { best = sanctify; result = "Sanctify"; }
+            if (eclipse > best) { best = eclipse; result = "Eclipse"; }
             if (thermalShock > best) result = "Thermal Shock";
             return result;
         }
@@ -306,6 +340,8 @@ final class SpellSystem {
             charge = Math.max(0f, charge);
             aether = Math.max(0f, aether);
             entropy = Math.max(0f, entropy);
+            radiance = Math.max(0f, radiance);
+            growth = Math.max(0f, growth);
 
             steam = Math.max(0f, heat * moisture - 0.24f);
             magma = Math.max(0f, heat * mass - 0.34f);
@@ -316,6 +352,10 @@ final class SpellSystem {
             corrosion = Math.max(0f, entropy * (moisture + heat * 0.30f) - 0.20f);
             resonance = Math.max(0f, aether * (cohesion + charge * 0.32f));
             thermalShock = Math.max(0f, heat * cold - 0.22f);
+            wildfire = Math.max(0f, heat * growth - 0.24f);
+            overgrowth = Math.max(0f, growth * (moisture + cohesion * 0.30f) - 0.22f);
+            sanctify = Math.max(0f, radiance * (cohesion + aether * 0.40f) - 0.24f);
+            eclipse = Math.max(0f, radiance * entropy - 0.18f);
         }
     }
 
@@ -332,19 +372,34 @@ final class SpellSystem {
             label.append(e.label.toUpperCase(Locale.US));
         }
 
-        if (arena == ArenaType.EMBER_VAULT) {
-            p.heat += 0.20f;
-            p.volatility += 0.08f;
-        } else if (arena == ArenaType.TIDAL_ARCHIVE) {
-            p.moisture += 0.20f;
-            p.cohesion += 0.06f;
-        } else if (arena == ArenaType.SHATTERED_CROWN) {
-            p.impulse += 0.10f;
-            p.volatility += 0.10f;
-        } else {
-            p.aether += 0.10f;
-            p.cohesion += 0.04f;
+        switch (arena) {
+            case EMBER_VAULT:
+                p.heat += 0.20f;
+                p.volatility += 0.08f;
+                break;
+            case TIDAL_ARCHIVE:
+                p.moisture += 0.20f;
+                p.cohesion += 0.06f;
+                break;
+            case SHATTERED_CROWN:
+                p.impulse += 0.10f;
+                p.volatility += 0.10f;
+                break;
+            case VERDANT_REACH:
+                p.growth += 0.20f;
+                p.moisture += 0.08f;
+                break;
+            case RADIANT_BASILICA:
+                p.radiance += 0.20f;
+                p.cohesion += 0.06f;
+                break;
+            case ASTRAL_COURT:
+            default:
+                p.aether += 0.10f;
+                p.cohesion += 0.04f;
+                break;
         }
+        if (artifact == Artifact.VERDANT_CHALICE) p.growth += 0.10f;
         p.label = label.toString();
         p.recalculate();
         return p;
@@ -394,6 +449,18 @@ final class SpellSystem {
                 p.cohesion -= 0.30f * w;
                 p.moisture -= 0.06f * w;
                 break;
+            case RADIANCE:
+                p.radiance += 1.00f * w;
+                p.heat += 0.24f * w;
+                p.cohesion += 0.20f * w;
+                p.entropy -= 0.30f * w;
+                break;
+            case VERDANCE:
+                p.growth += 1.00f * w;
+                p.moisture += 0.30f * w;
+                p.cohesion += 0.32f * w;
+                p.volatility -= 0.10f * w;
+                break;
         }
     }
 
@@ -403,6 +470,11 @@ final class SpellSystem {
         for (Clause clause : p.clauses) cost += clause.cost;
         if (artifact == Artifact.LEY_KEY && p.clauses.contains(Clause.RELAY)) cost -= 3f;
         if (artifact == Artifact.AEGIS_BELL && (p.form == Form.WARD || p.form == Form.ORBIT)) cost += 1.5f;
+        if (artifact == Artifact.HEXWRIGHT_RING) {
+            if (p.clauses.contains(Clause.HEX)) cost -= 1f;
+            if (p.clauses.contains(Clause.DISPEL)) cost -= 1f;
+            if (p.clauses.contains(Clause.SIPHON)) cost -= 1f;
+        }
         return Math.max(8f, cost);
     }
 
@@ -510,6 +582,11 @@ final class SpellSystem {
             templates.add(template(Element.AETHER, circlePoints()));
             templates.add(template(Element.VOID, new float[][]{
                     {0f, 0f}, {1f, 1f}, {0.52f, 0.52f}, {1f, 0f}, {0f, 1f}}));
+            templates.add(template(Element.RADIANCE, new float[][]{
+                    {0f, 1f}, {0.04f, 0.52f}, {0.22f, 0.10f}, {0.5f, 0f},
+                    {0.78f, 0.10f}, {0.96f, 0.52f}, {1f, 1f}}));
+            templates.add(template(Element.VERDANCE, new float[][]{
+                    {0f, 0.48f}, {0.34f, 1f}, {1f, 0f}}));
         }
 
         GlyphResult recognize(List<PointF> raw) {
