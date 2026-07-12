@@ -26,14 +26,18 @@ import java.util.Locale;
 import java.util.Random;
 
 /**
- * Sigilbound v1.4: Arcane Architecture.
+ * Sigilbound v2.0: The Living Weave.
  *
- * The duel remains a compact three-lane real-time game, but each lane now owns
- * a contestable ley node and persistent field state. Spell sentences support
- * four ordered sigils, six forms, and three ordered clauses. The UI is a guided
- * five-stage composer: Sigils -> Form -> Clauses -> Lane -> Cast.
+ * A compact three-lane real-time duel where every lane owns a contestable ley
+ * node, a rolled lane trait, and persistent field state, and where the arena
+ * itself periodically intervenes. Spell sentences support four ordered sigils,
+ * nine forms, and three ordered clauses; persistent objects (wards, glyphs,
+ * rifts, auras, traps, fields) keep modifying each other after they resolve.
+ * The UI is a guided five-stage composer: Sigils -> Form -> Clauses -> Lane -> Cast.
  */
 public final class ArcaneDuelView extends View {
+    /** Entity owner index used for neutral environmental hazards (hostile to both duelists). */
+    private static final int OWNER_ENVIRONMENT = 2;
     private static final int VOID_BLACK = Color.rgb(7, 7, 14);
     private static final int DEEP_INK = Color.rgb(13, 12, 24);
     private static final int PANEL = Color.rgb(24, 22, 38);
@@ -66,16 +70,18 @@ public final class ArcaneDuelView extends View {
     private final ArrayList<PendingCast> pendingCasts = new ArrayList<PendingCast>();
     private final ArrayList<Particle> particles = new ArrayList<Particle>();
     private final ArrayList<FloatingText> floatingTexts = new ArrayList<FloatingText>();
+    private final ArrayList<Shockwave> shockwaves = new ArrayList<Shockwave>();
     private final LeyNode[] nodes = {new LeyNode(), new LeyNode(), new LeyNode()};
+    private final LaneTrait[] laneTraits = {LaneTrait.LEY_CURRENT, LaneTrait.BEDROCK, LaneTrait.WELLSPRING};
 
     private final RectF mainButton = new RectF();
     private final RectF secondaryButton = new RectF();
     private final RectF grimoireButton = new RectF();
     private final RectF codexButton = new RectF();
-    private final RectF[] artifactRects = createRects(5);
+    private final RectF[] artifactRects = createRects(7);
     private final RectF[] difficultyRects = createRects(3);
     private final RectF[] tempoRects = createRects(3);
-    private final RectF[] arenaRects = createRects(4);
+    private final RectF[] arenaRects = createRects(6);
 
     private final RectF composerPanel = new RectF();
     private final RectF[] stepRects = createRects(5);
@@ -88,8 +94,8 @@ public final class ArcaneDuelView extends View {
     private final RectF clearButton = new RectF();
     private final RectF continueButton = new RectF();
     private final RectF backStepButton = new RectF();
-    private final RectF[] formRects = createRects(6);
-    private final RectF[] clauseRects = createRects(8);
+    private final RectF[] formRects = createRects(9);
+    private final RectF[] clauseRects = createRects(12);
     private final RectF[] laneRects = createRects(3);
     private final RectF castButton = new RectF();
 
@@ -103,9 +109,9 @@ public final class ArcaneDuelView extends View {
     private final RectF grimoireSave = new RectF();
     private final RectF grimoireBack = new RectF();
     private final RectF grimoireUndo = new RectF();
-    private final RectF[] editorElementRects = createRects(8);
-    private final RectF[] editorFormRects = createRects(6);
-    private final RectF[] editorClauseRects = createRects(8);
+    private final RectF[] editorElementRects = createRects(10);
+    private final RectF[] editorFormRects = createRects(9);
+    private final RectF[] editorClauseRects = createRects(12);
 
     private final RectF codexBack = new RectF();
     private final RectF codexPrev = new RectF();
@@ -152,12 +158,20 @@ public final class ArcaneDuelView extends View {
     private float playerInk;
     private float aiCooldown;
     private float duelClock;
+    private float uiClock;
     private float playerBurn;
     private float enemyBurn;
     private float playerSlow;
     private float enemySlow;
     private EnemyIntent enemyIntent;
     private boolean practiceMode;
+
+    private float arenaEventTimer;
+    private float tideSurgeTimer;
+    private int lightShaftLane = -1;
+    private float lightShaftTimer;
+    private float shakeTimer;
+    private float shakeMagnitude;
 
     private String banner = "";
     private float bannerTimer;
@@ -212,7 +226,13 @@ public final class ArcaneDuelView extends View {
                 program(new Element[]{Element.VOID, Element.AETHER}, Form.GLYPH,
                         new Clause[]{Clause.CONSUME, Clause.ECHO}),
                 program(new Element[]{Element.STONE, Element.WIND, Element.FROST}, Form.ORBIT,
-                        new Clause[]{Clause.FORK, Clause.ANCHOR})
+                        new Clause[]{Clause.FORK, Clause.ANCHOR}),
+                program(new Element[]{Element.RADIANCE, Element.AETHER}, Form.AURA,
+                        new Clause[]{Clause.ANCHOR}),
+                program(new Element[]{Element.VERDANCE, Element.WATER}, Form.SURGE,
+                        new Clause[]{Clause.SWIFT}),
+                program(new Element[]{Element.VOID, Element.LIGHTNING}, Form.LANCE,
+                        new Clause[]{Clause.DISPEL, Clause.SEEK})
         };
         int count = preferences.getInt("program_count", -1);
         if (count < 0) {
@@ -281,14 +301,14 @@ public final class ArcaneDuelView extends View {
     }
 
     private void layoutTitle(int w, int h, float margin) {
-        float y = dp(160f);
-        layoutRow(artifactRects, margin, y, w - margin, dp(58f), dp(7f));
-        y += dp(74f);
-        layoutRow(difficultyRects, margin, y, w - margin, dp(48f), dp(8f));
-        y += dp(64f);
-        layoutRow(tempoRects, margin, y, w - margin, dp(48f), dp(8f));
-        y += dp(64f);
-        layoutRow(arenaRects, margin, y, w - margin, dp(58f), dp(7f));
+        float y = dp(148f);
+        layoutGrid(artifactRects, margin, y, w - margin, y + dp(94f), 4, 2, dp(6f));
+        y += dp(110f);
+        layoutRow(difficultyRects, margin, y, w - margin, dp(42f), dp(8f));
+        y += dp(56f);
+        layoutRow(tempoRects, margin, y, w - margin, dp(42f), dp(8f));
+        y += dp(56f);
+        layoutGrid(arenaRects, margin, y, w - margin, y + dp(94f), 3, 2, dp(6f));
 
         float buttonY = h - dp(154f);
         mainButton.set(margin, buttonY, w - margin, buttonY + dp(58f));
@@ -320,17 +340,17 @@ public final class ArcaneDuelView extends View {
         undoButton.set(left, top, left + dp(72f), top + dp(38f));
 
         drawingPad.set(left, top + dp(44f), right, bottom - dp(56f));
-        layoutGrid(formRects, left, top + dp(12f), right, bottom - dp(56f), 3, 2, dp(8f));
-        layoutGrid(clauseRects, left, top + dp(8f), right, bottom - dp(56f), 2, 4, dp(7f));
+        layoutGrid(formRects, left, top + dp(12f), right, bottom - dp(56f), 3, 3, dp(7f));
+        layoutGrid(clauseRects, left, top + dp(8f), right, bottom - dp(56f), 3, 4, dp(6f));
         layoutRow(laneRects, left, top + dp(38f), right, dp(92f), dp(9f));
     }
 
     private void layoutGrimoire(int w, int h, float margin) {
         grimoireBack.set(margin, dp(16f), margin + dp(72f), dp(58f));
-        grimoireList.set(margin, dp(82f), w - margin, dp(282f));
-        layoutGrid(grimoireCards, margin + dp(4f), dp(92f), w - margin - dp(4f), dp(238f), 2, 2, dp(8f));
+        grimoireList.set(margin, dp(78f), w - margin, dp(248f));
+        layoutGrid(grimoireCards, margin + dp(4f), dp(86f), w - margin - dp(4f), dp(206f), 2, 2, dp(7f));
 
-        float actionTop = dp(244f);
+        float actionTop = dp(212f);
         float usable = w - margin * 2f;
         float gap = dp(5f);
         float small = dp(42f);
@@ -338,16 +358,16 @@ public final class ArcaneDuelView extends View {
         float delete = dp(70f);
         float duplicate = Math.max(dp(82f), usable - small * 2f - add - delete - gap * 4f);
         float x = margin;
-        grimoireUp.set(x, actionTop, x + small, actionTop + dp(34f)); x += small + gap;
-        grimoireDown.set(x, actionTop, x + small, actionTop + dp(34f)); x += small + gap;
-        grimoireAdd.set(x, actionTop, x + add, actionTop + dp(34f)); x += add + gap;
-        grimoireDuplicate.set(x, actionTop, x + duplicate, actionTop + dp(34f)); x += duplicate + gap;
-        grimoireDelete.set(x, actionTop, w - margin, actionTop + dp(34f));
+        grimoireUp.set(x, actionTop, x + small, actionTop + dp(30f)); x += small + gap;
+        grimoireDown.set(x, actionTop, x + small, actionTop + dp(30f)); x += small + gap;
+        grimoireAdd.set(x, actionTop, x + add, actionTop + dp(30f)); x += add + gap;
+        grimoireDuplicate.set(x, actionTop, x + duplicate, actionTop + dp(30f)); x += duplicate + gap;
+        grimoireDelete.set(x, actionTop, w - margin, actionTop + dp(30f));
 
-        float editorTop = dp(292f);
-        layoutGrid(editorElementRects, margin, editorTop + dp(52f), w - margin, editorTop + dp(112f), 4, 2, dp(6f));
-        layoutGrid(editorFormRects, margin, editorTop + dp(142f), w - margin, editorTop + dp(202f), 3, 2, dp(7f));
-        layoutGrid(editorClauseRects, margin, editorTop + dp(232f), w - margin, editorTop + dp(294f), 4, 2, dp(6f));
+        float editorTop = dp(258f);
+        layoutGrid(editorElementRects, margin, editorTop + dp(48f), w - margin, editorTop + dp(122f), 5, 2, dp(5f));
+        layoutGrid(editorFormRects, margin, editorTop + dp(148f), w - margin, editorTop + dp(258f), 3, 3, dp(5f));
+        layoutGrid(editorClauseRects, margin, editorTop + dp(284f), w - margin, editorTop + dp(394f), 4, 3, dp(5f));
         float actionY = h - dp(64f);
         grimoireUndo.set(margin, actionY, margin + dp(86f), actionY + dp(48f));
         grimoireSave.set(margin + dp(94f), actionY, w - margin, actionY + dp(48f));
@@ -394,7 +414,16 @@ public final class ArcaneDuelView extends View {
         else if (screen == Screen.GRIMOIRE) drawGrimoire(canvas);
         else if (screen == Screen.CODEX) drawCodex(canvas);
         else {
+            boolean shaking = shakeTimer > 0f && screen == Screen.DUEL;
+            if (shaking) {
+                canvas.save();
+                float falloff = shakeTimer / 0.28f;
+                canvas.translate((random.nextFloat() - 0.5f) * 2f * shakeMagnitude * falloff,
+                        (random.nextFloat() - 0.5f) * 2f * shakeMagnitude * falloff);
+            }
             drawArena(canvas);
+            drawShockwaves(canvas);
+            if (shaking) canvas.restore();
             drawHud(canvas);
             drawEnemyIntent(canvas);
             drawComposer(canvas);
@@ -406,6 +435,7 @@ public final class ArcaneDuelView extends View {
     }
 
     private void update(float dt) {
+        uiClock += dt;
         if (bannerTimer > 0f) bannerTimer -= dt;
         for (Iterator<Particle> iterator = particles.iterator(); iterator.hasNext();) {
             Particle particle = iterator.next();
@@ -422,6 +452,13 @@ public final class ArcaneDuelView extends View {
             text.y -= dp(19f) * dt;
             if (text.life <= 0f) iterator.remove();
         }
+        for (Iterator<Shockwave> iterator = shockwaves.iterator(); iterator.hasNext();) {
+            Shockwave wave = iterator.next();
+            wave.life -= dt;
+            wave.radius += wave.speed * dt;
+            if (wave.life <= 0f) iterator.remove();
+        }
+        if (shakeTimer > 0f) shakeTimer = Math.max(0f, shakeTimer - dt);
         for (int i = 0; i < executableCooldowns.size(); i++) {
             if (executableCooldowns.get(i) > 0f) executableCooldowns.set(i, Math.max(0f, executableCooldowns.get(i) - dt));
         }
@@ -436,9 +473,22 @@ public final class ArcaneDuelView extends View {
         playerSlow = Math.max(0f, playerSlow - dt);
         enemySlow = Math.max(0f, enemySlow - dt);
 
-        for (LeyNode node : nodes) {
+        for (int lane = 0; lane < 3; lane++) {
+            LeyNode node = nodes[lane];
             node.charge = Math.max(0f, node.charge - dt * (selectedArena == ArenaType.ASTRAL_COURT ? 0.5f : 0.9f));
             if (node.charge <= 0.01f) { node.owner = -1; node.profile = baseNodeProfile(); }
+            if (laneTraits[lane] == LaneTrait.WELLSPRING && node.owner >= 0 && node.charge > 4f) {
+                if (node.owner == 0) playerMana = Math.min(100f, playerMana + 1.7f * dt);
+                else enemyMana = Math.min(100f, enemyMana + 1.7f * dt);
+            }
+        }
+
+        tideSurgeTimer = Math.max(0f, tideSurgeTimer - dt);
+        lightShaftTimer = Math.max(0f, lightShaftTimer - dt);
+        if (lightShaftTimer <= 0f) lightShaftLane = -1;
+        if (!practiceMode || duelClock > 10f) {
+            arenaEventTimer -= dt;
+            if (arenaEventTimer <= 0f) fireArenaEvent();
         }
 
         updateEntities(dt);
@@ -470,7 +520,8 @@ public final class ArcaneDuelView extends View {
             if (entity.dead) continue;
             entity.age += dt;
             entity.timer -= dt;
-            if (!entity.trail.isEmpty() || entity.kind == Kind.PROJECTILE || entity.kind == Kind.SHARD) {
+            if (!entity.trail.isEmpty() || entity.kind == Kind.PROJECTILE || entity.kind == Kind.SHARD
+                    || entity.kind == Kind.SURGE) {
                 entity.trailTimer -= dt;
                 if (entity.trailTimer <= 0f) {
                     entity.trailTimer = 0.045f;
@@ -484,6 +535,9 @@ public final class ArcaneDuelView extends View {
                 case SHARD:
                     updateProjectile(entity, dt, additions);
                     break;
+                case SURGE:
+                    updateSurge(entity, dt, additions);
+                    break;
                 case ORBIT:
                     updateOrbit(entity, dt, additions);
                     break;
@@ -491,7 +545,11 @@ public final class ArcaneDuelView extends View {
                 case GLYPH:
                 case FIELD:
                 case ENCHANTMENT:
+                case AURA:
                     updatePersistent(entity, dt, additions);
+                    break;
+                case RIFT:
+                    updateRift(entity, dt, additions);
                     break;
                 case BURST:
                     if (entity.timer <= 0f) detonateBurst(entity, additions);
@@ -522,6 +580,17 @@ public final class ArcaneDuelView extends View {
             if ((zone.kind == Kind.FIELD || zone.kind == Kind.GLYPH) && Math.abs(zone.y - entity.y) < zone.radius) {
                 fieldScale *= applyFieldInfluence(entity, zone, dt);
             }
+            if (zone.kind == Kind.RIFT && Math.abs(zone.y - entity.y) < zone.radius) {
+                applyRiftInfluence(entity, zone);
+            }
+        }
+        if (tideSurgeTimer > 0f) {
+            fieldScale *= 0.74f;
+            entity.profile.blend(tideProfile(), dt * 0.30f);
+        }
+        if (lightShaftLane == entity.lane && lightShaftTimer > 0f) {
+            entity.damage += dt * 1.4f;
+            entity.profile.blend(lightProfile(), dt * 0.30f);
         }
         float oldY = entity.y;
         entity.y += entity.velocity * statusScale * fieldScale * dt;
@@ -550,20 +619,97 @@ public final class ArcaneDuelView extends View {
             projectile.damage += dt * (0.22f + zone.profile.aether * 0.18f + zone.profile.heat * 0.12f);
             return 1f + Math.min(0.18f, zone.profile.impulse * 0.035f);
         }
+        boolean hexwright = projectile.owner == 0 && selectedArtifact == Artifact.HEXWRIGHT_RING;
+        if (hasClause(projectile, Clause.DISPEL) && zone.kind == Kind.FIELD) {
+            zone.dead = true;
+            floatingTexts.add(new FloatingText("DISPELLED", zone.x, zone.y, IVORY, 0.9f));
+            spawnShockwave(zone.x, zone.y, IVORY, zone.radius);
+            return 1f;
+        }
+        if (hasClause(projectile, Clause.SIPHON)) {
+            float rate = hexwright ? 1.5f : 1f;
+            projectile.profile.blend(zone.profile, dt * 0.06f * rate);
+            projectile.damage += dt * 0.85f * rate;
+            zone.life -= dt * 1.7f * rate;
+            if (random.nextFloat() < 0.25f) spawnArc(projectile.x, projectile.y, zone.profileColor(), 3);
+            return 1f;
+        }
         float slow = 1f;
         if (zone.profile.moisture > 0.2f || zone.profile.cold > 0.2f) {
             slow -= Math.min(0.35f, zone.profile.moisture * 0.06f + zone.profile.cold * 0.08f);
         }
+        if (zone.profile.overgrowth > 0.15f) slow -= Math.min(0.20f, zone.profile.growth * 0.08f);
         projectile.damage = Math.max(2f, projectile.damage - dt * (0.55f + zone.profile.entropy * 0.65f));
         if (zone.profile.charge > 0.25f && projectile.profile.moisture > 0.25f) projectile.damage += dt * 0.8f;
-        return Math.max(0.55f, slow);
+        if (zone.profile.magma > 0.15f) projectile.damage = Math.max(2f, projectile.damage - dt * zone.profile.magma * 1.1f);
+        return Math.max(0.50f, slow);
+    }
+
+    /**
+     * A hostile rift with remaining charges throws the projectile into the lane
+     * where the rift owner is strongest; allied projectiles are accelerated and
+     * tinted by the rift instead.
+     */
+    private void applyRiftInfluence(Entity projectile, Entity rift) {
+        if (rift.owner == projectile.owner) {
+            if (!projectile.riftBoosted) {
+                projectile.riftBoosted = true;
+                projectile.velocity *= 1.12f;
+                projectile.profile.blend(rift.profile, 0.15f);
+            }
+            return;
+        }
+        if (rift.timer <= 0f || projectile.riftedBy == rift) return;
+        int target = rift.lane;
+        float best = -Float.MAX_VALUE;
+        for (int direction : new int[]{-1, 1}) {
+            int lane = rift.lane + direction;
+            if (lane < 0 || lane > 2) continue;
+            float score = lanePressure(rift.owner, lane) - lanePressure(projectile.owner, lane) * 0.5f
+                    + random.nextFloat() * 2f;
+            if (score > best) { best = score; target = lane; }
+        }
+        if (target == rift.lane) return;
+        rift.timer -= 1f;
+        projectile.riftedBy = rift;
+        spawnArc(projectile.x, projectile.y, rift.profileColor(), laneX[target], projectile.y, 5);
+        projectile.lane = target;
+        projectile.x = laneX[target];
+        projectile.passedNode = false;
+        floatingTexts.add(new FloatingText("RIFTED", projectile.x, projectile.y, rift.profileColor(), 0.9f));
+        spawnShockwave(rift.x, rift.y, rift.profileColor(), rift.radius * 1.2f);
+        if (rift.timer <= 0f) {
+            rift.dead = true;
+            floatingTexts.add(new FloatingText("RIFT COLLAPSES", rift.x, rift.y, MUTED, 0.9f));
+        }
+    }
+
+    private boolean hasClause(Entity entity, Clause clause) {
+        return entity.program != null && entity.program.has(clause);
+    }
+
+    private Profile tideProfile() {
+        Profile p = new Profile();
+        p.moisture = 1f;
+        p.cohesion = 0.3f;
+        p.recalculate();
+        return p;
+    }
+
+    private Profile lightProfile() {
+        Profile p = new Profile();
+        p.radiance = 1f;
+        p.heat = 0.2f;
+        p.recalculate();
+        return p;
     }
 
     private void updateOrbit(Entity entity, float dt, ArrayList<Entity> additions) {
         entity.life -= dt;
         if (entity.life <= 0f || entity.hp <= 0f) { entity.dead = true; return; }
         if (entity.timer <= 0f) {
-            entity.timer = Math.max(0.64f, 1.45f - entity.profile.impulse * 0.18f - entity.profile.charge * 0.10f);
+            entity.timer = Math.max(0.64f, 1.45f - entity.profile.impulse * 0.18f - entity.profile.charge * 0.10f)
+                    * (entity.swift ? 0.75f : 1f);
             Entity bolt = createProjectile(entity.owner, entity.lane, entity.profile.copy(),
                     entity.damage * 0.48f, entity.program, entity.powerScale * 0.78f, entity.empowered);
             bolt.y = entity.y + (entity.owner == 0 ? -entity.radius : entity.radius);
@@ -572,10 +718,67 @@ public final class ArcaneDuelView extends View {
         }
     }
 
+    /**
+     * A surge is a wide wavefront: it shoves hostile spell bodies backward,
+     * damps hostile fields, and washes over constructs instead of trading.
+     */
+    private void updateSurge(Entity surge, float dt, ArrayList<Entity> additions) {
+        float fieldScale = 1f;
+        for (Entity other : entities) {
+            if (other.dead || other == surge || other.lane != surge.lane) continue;
+            if (other.owner == surge.owner) continue;
+            float gap = Math.abs(other.y - surge.y);
+            if ((other.kind == Kind.PROJECTILE || other.kind == Kind.SHARD) && gap < surge.radius + other.radius) {
+                float push = dp(150f) * (1f + surge.profile.impulse * 0.20f) * dt;
+                other.y -= Math.signum(other.velocity) * push;
+                other.damage = Math.max(2f, other.damage - dt * 1.6f);
+                if (random.nextFloat() < 0.3f) spawnArc(other.x, other.y, surge.profileColor(), 3);
+            } else if (other.kind == Kind.FIELD && gap < surge.radius + other.radius) {
+                other.life -= dt * 2.6f;
+            } else if (isConstruct(other) && gap < surge.radius + other.radius) {
+                applyHitToEntity(surge, other, surge.damage, additions);
+                surge.dead = true;
+                return;
+            }
+        }
+        if (tideSurgeTimer > 0f) fieldScale *= 0.80f;
+        surge.y += surge.velocity * fieldScale * dt;
+        if (surge.owner == 0 && surge.y <= fieldTop + dp(10f)) {
+            applyCasterDamage(1, surge, additions, surge.damage * 0.75f);
+            surge.dead = true;
+        } else if (surge.owner == 1 && surge.y >= fieldBottom - dp(10f)) {
+            applyCasterDamage(0, surge, additions, surge.damage * 0.75f);
+            surge.dead = true;
+        }
+        if (random.nextFloat() < 0.45f) spawnTrailParticle(surge);
+    }
+
+    /**
+     * A rift holds position and decays; its redirect work happens in
+     * applyRiftInfluence when projectiles cross it.
+     */
+    private void updateRift(Entity rift, float dt, ArrayList<Entity> additions) {
+        rift.life -= dt;
+        if (rift.life <= 0f || rift.hp <= 0f || rift.timer <= 0f) {
+            if (!rift.dead) {
+                rift.dead = true;
+                spawnShockwave(rift.x, rift.y, rift.profileColor(), rift.radius * 1.4f);
+            }
+            return;
+        }
+        if (random.nextFloat() < 0.2f) {
+            float angle = random.nextFloat() * (float) Math.PI * 2f;
+            particles.add(new Particle(rift.x + (float) Math.cos(angle) * rift.radius,
+                    rift.y + (float) Math.sin(angle) * rift.radius * 0.45f,
+                    -(float) Math.cos(angle) * dp(24f), -(float) Math.sin(angle) * dp(12f),
+                    dp(1.4f), rift.profileColor(), 0.5f, true));
+        }
+    }
+
     private void updatePersistent(Entity entity, float dt, ArrayList<Entity> additions) {
         entity.life -= dt;
-        if ((entity.kind == Kind.WARD || entity.kind == Kind.ORBIT || entity.kind == Kind.GLYPH)
-                && entity.hp <= 0f) entity.dead = true;
+        if ((entity.kind == Kind.WARD || entity.kind == Kind.ORBIT || entity.kind == Kind.GLYPH
+                || entity.kind == Kind.AURA) && entity.hp <= 0f) entity.dead = true;
         if (entity.life <= 0f) entity.dead = true;
         if (entity.dead) return;
 
@@ -584,12 +787,23 @@ public final class ArcaneDuelView extends View {
             float speed = selectedArtifact == Artifact.LEY_KEY && entity.owner == 0 ? 9f : 6f;
             attuneNode(node, entity.owner, entity.profile, speed * dt);
         }
-        if (entity.kind == Kind.FIELD && entity.profile.corrosion > 0.2f) {
+        if (entity.kind == Kind.FIELD) {
+            float corrode = entity.profile.corrosion > 0.2f ? 2.2f + entity.profile.corrosion * 1.4f : 0f;
+            float burn = entity.profile.magma > 0.15f ? 1.6f + entity.profile.magma * 1.2f : 0f;
+            float shatter = entity.profile.shatter > 0.15f ? 1.2f + entity.profile.shatter * 1.0f : 0f;
+            float mend = entity.profile.overgrowth > 0.15f ? 1.8f + entity.profile.overgrowth * 1.5f : 0f;
+            if (entity.owner == 0 && selectedArtifact == Artifact.VERDANT_CHALICE) mend *= 1.5f;
             for (Entity other : entities) {
-                if (!other.dead && other.owner != entity.owner && other.lane == entity.lane
-                        && isConstruct(other) && Math.abs(other.y - entity.y) < entity.radius) {
-                    other.hp -= dt * (2.2f + entity.profile.corrosion * 1.4f);
+                if (other.dead || other.lane != entity.lane || !isConstruct(other)
+                        || Math.abs(other.y - entity.y) >= entity.radius) continue;
+                if (other.owner != entity.owner) other.hp -= dt * (corrode + burn + shatter);
+                // Environment blooms mend everyone; owned regrowth mends allies only.
+                if (mend > 0f && (entity.owner == OWNER_ENVIRONMENT || other.owner == entity.owner)) {
+                    other.hp += dt * mend;
                 }
+            }
+            if (mend > 0f && entity.owner == 0 && selectedArtifact == Artifact.VERDANT_CHALICE) {
+                playerHealth = Math.min(100f, playerHealth + dt * 0.6f);
             }
         }
         if (entity.kind == Kind.WARD && selectedArtifact == Artifact.AEGIS_BELL && entity.owner == 0) {
@@ -629,6 +843,13 @@ public final class ArcaneDuelView extends View {
             if (hostile.dead || hostile.owner == trap.owner || hostile.lane != trap.lane) continue;
             if ((hostile.kind == Kind.PROJECTILE || hostile.kind == Kind.BEAM || hostile.kind == Kind.SHARD)
                     && Math.abs(hostile.y - trap.y) < trap.radius) {
+                if (hasClause(hostile, Clause.DISPEL)) {
+                    trap.dead = true;
+                    hostile.program.clauses.remove(Clause.DISPEL);
+                    floatingTexts.add(new FloatingText("TRAP DISPELLED", trap.x, trap.y, IVORY, 1f));
+                    spawnShockwave(trap.x, trap.y, IVORY, trap.radius);
+                    break;
+                }
                 trap.dead = true;
                 Program released = trap.storedProgram == null ? trap.program : trap.storedProgram;
                 deploySpell(trap.owner, released, trap.lane, 0.88f, trap.powerScale * 0.88f, trap.empowered, true);
@@ -681,6 +902,19 @@ public final class ArcaneDuelView extends View {
     private void resolveWaitingEnchantments() {
         for (Entity enchantment : entities) {
             if (enchantment.dead || enchantment.kind != Kind.ENCHANTMENT) continue;
+            if (enchantment.hexWaiting) {
+                for (Entity hostile : entities) {
+                    if (hostile.dead || hostile.owner == enchantment.owner || hostile.owner == OWNER_ENVIRONMENT
+                            || hostile.lane != enchantment.lane) continue;
+                    if (!isConstruct(hostile) && hostile.kind != Kind.PROJECTILE && hostile.kind != Kind.RIFT) continue;
+                    if (Math.abs(hostile.y - enchantment.y) < enchantment.radius * 1.3f) {
+                        applyHex(hostile, enchantment.profile, enchantment.powerScale, enchantment.owner);
+                        enchantment.dead = true;
+                        break;
+                    }
+                }
+                continue;
+            }
             Entity target = nearestAlliedBindable(enchantment.owner, enchantment.lane, enchantment.y);
             if (target != null && Math.abs(target.y - enchantment.y) < enchantment.radius * 1.2f) {
                 applyBinding(target, enchantment.profile, enchantment.powerScale);
@@ -691,11 +925,40 @@ public final class ArcaneDuelView extends View {
         }
     }
 
+    /**
+     * Hex is the hostile mirror of Bind: it merges entropy pressure into the
+     * target and erodes its damage, durability, and remaining lifetime.
+     */
+    private void applyHex(Entity target, Profile hexProfile, float powerScale, int hexOwner) {
+        boolean hexwright = hexOwner == 0 && selectedArtifact == Artifact.HEXWRIGHT_RING;
+        float strength = powerScale * (hexwright ? 1.4f : 1f);
+        Profile curse = hexProfile.copy();
+        curse.entropy += 0.5f;
+        curse.recalculate();
+        target.profile.blend(curse, 0.30f * strength);
+        target.damage *= Math.max(0.45f, 1f - 0.22f * strength - hexProfile.entropy * 0.08f);
+        target.hp *= Math.max(0.45f, 1f - 0.20f * strength);
+        target.life *= Math.max(0.40f, 1f - 0.25f * strength);
+        target.hexed = true;
+        floatingTexts.add(new FloatingText("HEXED", target.x, target.y, Element.VOID.color, 1f));
+        spawnRing(target.x, target.y, Element.VOID.color, target.radius * 1.3f);
+    }
+
     private void applyHitToEntity(Entity source, Entity target, float damage, ArrayList<Entity> additions) {
         float response = reactionStrength(source.profile, target.profile);
         float multiplier = 1f + Math.min(0.65f, response * 0.18f);
         if (target.kind == Kind.WARD && target.profile.mass > source.profile.impulse) multiplier *= 0.82f;
         if (source.profile.nullFlux > 0.2f) multiplier += 0.18f;
+        if (source.profile.eclipse > 0.15f) multiplier += 0.24f;
+        if (target.profile.sanctify > 0.15f) multiplier *= 0.82f;
+        if (hasClause(source, Clause.DISPEL)) multiplier += 0.30f;
+        if (hasClause(source, Clause.SIPHON) && source.owner <= 1) {
+            boolean hexwright = source.owner == 0 && selectedArtifact == Artifact.HEXWRIGHT_RING;
+            float leech = damage * (hexwright ? 0.22f : 0.14f);
+            if (source.owner == 0) playerMana = Math.min(100f, playerMana + leech);
+            else enemyMana = Math.min(100f, enemyMana + leech);
+        }
+        if (laneTraits[target.lane] == LaneTrait.WILD_MAGIC) multiplier *= 1.20f;
         target.hp -= damage * multiplier;
         if (source.profile.entropy > 0.3f) target.life -= source.profile.entropy * 0.35f;
         if (source.profile.charge > 0.3f && target.profile.moisture > 0.25f) target.hp -= damage * 0.22f;
@@ -727,6 +990,8 @@ public final class ArcaneDuelView extends View {
             else enemyMana = Math.min(100f, enemyMana + 3f + source.profile.entropy);
         }
         spawnImpact(source.x, targetOwner == 0 ? fieldBottom : fieldTop, source.profileColor(), 24);
+        spawnShockwave(source.x, targetOwner == 0 ? fieldBottom : fieldTop, source.profileColor(), dp(54f));
+        addShake(dp(Math.min(6f, 2f + finalDamage * 0.14f)));
         floatingTexts.add(new FloatingText("-" + Math.round(finalDamage), source.x,
                 targetOwner == 0 ? fieldBottom - dp(10f) : fieldTop + dp(20f), DANGER, 1f));
         createReactionFieldFromProfiles(source.owner, source.lane,
@@ -751,6 +1016,8 @@ public final class ArcaneDuelView extends View {
         }
         createReactionFieldFromProfiles(burst.owner, burst.lane, burst.y, burst.profile, null, additions);
         spawnImpact(burst.x, burst.y, burst.profileColor(), hitSomething ? 34 : 24);
+        spawnShockwave(burst.x, burst.y, burst.profileColor(), burst.radius * 1.5f);
+        addShake(dp(hitSomething ? 5f : 3f));
         floatingTexts.add(new FloatingText(burst.profile.dominantReaction().toUpperCase(Locale.US),
                 burst.x, burst.y, BRIGHT_GOLD, 1.2f));
     }
@@ -760,6 +1027,30 @@ public final class ArcaneDuelView extends View {
         Reaction reaction = analyzeReaction(a.profile, b.profile);
         float powerA = a.damage * a.profile.force() * a.powerScale;
         float powerB = b.damage * b.profile.force() * b.powerScale;
+        if (laneTraits[a.lane] == LaneTrait.WILD_MAGIC) {
+            reaction = new Reaction(reaction.type, reaction.strength * 1.35f, reaction.label, reaction.color);
+        }
+
+        // Dispel is the removal instant: it erases the opposing body outright,
+        // consuming the dispel charge before any elemental reaction can occur.
+        boolean dispelA = hasClause(a, Clause.DISPEL);
+        boolean dispelB = hasClause(b, Clause.DISPEL);
+        if (dispelA || dispelB) {
+            if (dispelA && dispelB) {
+                a.dead = true;
+                b.dead = true;
+            } else {
+                Entity dispeller = dispelA ? a : b;
+                Entity dispelled = dispelA ? b : a;
+                dispelled.dead = true;
+                dispeller.program.clauses.remove(Clause.DISPEL);
+                dispeller.damage *= 0.82f;
+            }
+            floatingTexts.add(new FloatingText("DISPELLED", laneX[a.lane], y, IVORY, 1f));
+            spawnShockwave(laneX[a.lane], y, IVORY, dp(46f));
+            reactionsWon += a.owner == 0 || b.owner == 0 ? 1 : 0;
+            return;
+        }
 
         if (reaction.type == ReactionType.NULL_FLUX) {
             a.dead = true;
@@ -772,6 +1063,8 @@ public final class ArcaneDuelView extends View {
             b.dead = true;
             damageNearby(a.lane, y, -1, (powerA + powerB) * 0.22f, dp(72f));
             spawnImpact(laneX[a.lane], y, IVORY, 34);
+            spawnShockwave(laneX[a.lane], y, IVORY, dp(72f));
+            addShake(dp(4f));
         } else if (reaction.type == ReactionType.CONDUCTION) {
             Entity winner = powerA >= powerB ? a : b;
             Entity loser = winner == a ? b : a;
@@ -779,12 +1072,31 @@ public final class ArcaneDuelView extends View {
             winner.damage *= 0.68f;
             chainLightning(winner.owner, winner.lane, y, winner.damage * 0.24f, additions);
         } else if (reaction.type == ReactionType.STEAM || reaction.type == ReactionType.BLIZZARD
-                || reaction.type == ReactionType.MAGMA || reaction.type == ReactionType.CORROSION) {
+                || reaction.type == ReactionType.MAGMA || reaction.type == ReactionType.CORROSION
+                || reaction.type == ReactionType.WILDFIRE || reaction.type == ReactionType.OVERGROWTH) {
             a.dead = true;
             b.dead = true;
             Entity field = createField(powerA >= powerB ? a.owner : b.owner, a.lane, y,
                     mergeProfiles(a.profile, b.profile, 0.55f), 4.0f + reaction.strength * 1.4f);
             additions.add(field);
+        } else if (reaction.type == ReactionType.ECLIPSE) {
+            a.dead = true;
+            b.dead = true;
+            damageNearby(a.lane, y, -1, (powerA + powerB) * 0.26f, dp(80f));
+            spawnShockwave(laneX[a.lane], y, Element.RADIANCE.color, dp(80f));
+            spawnImpact(laneX[a.lane], y, Element.VOID.color, 30);
+            addShake(dp(5f));
+        } else if (reaction.type == ReactionType.SANCTIFY) {
+            // Cleansing light: the stronger body survives purified — entropy
+            // stripped, hex lifted, and a little durability restored.
+            Entity winner = powerA >= powerB ? a : b;
+            Entity loser = winner == a ? b : a;
+            loser.dead = true;
+            winner.profile.entropy = 0f;
+            winner.profile.recalculate();
+            winner.hexed = false;
+            winner.hp += 4f;
+            winner.damage *= 0.88f;
         } else if (reaction.type == ReactionType.SHATTER) {
             a.dead = true;
             b.dead = true;
@@ -824,6 +1136,8 @@ public final class ArcaneDuelView extends View {
         field.x = laneX[lane];
         field.y = y;
         field.radius = dp(48f) * (1f + profile.moisture * 0.10f + profile.aether * 0.08f);
+        if (laneTraits[lane] == LaneTrait.ASHEN_GROUND) life *= 1.40f;
+        if (laneTraits[lane] == LaneTrait.WILD_MAGIC) life *= 1.20f;
         field.life = life;
         field.hp = 1f;
         field.damage = 2f + profile.heat + profile.entropy;
@@ -875,6 +1189,16 @@ public final class ArcaneDuelView extends View {
         Profile profile = compile(program.elements, owner == 0 ? selectedArtifact : Artifact.PRISM_LENS, selectedArena);
         float localPower = powerScale;
 
+        // A standing aura is a global enchantment: every allied cast inherits a
+        // share of its profile while it survives.
+        if (program.form != Form.AURA) {
+            Entity aura = findAura(owner);
+            if (aura != null) {
+                profile.blend(aura.profile, 0.35f);
+                spawnArc(aura.x, aura.y, aura.profileColor(), 4);
+            }
+        }
+
         if (program.has(Clause.CONSUME)) {
             Entity sacrifice = findConsumable(owner, lane);
             if (sacrifice != null) {
@@ -884,6 +1208,26 @@ public final class ArcaneDuelView extends View {
                 spawnImpact(sacrifice.x, sacrifice.y, Element.VOID.color, 18);
                 floatingTexts.add(new FloatingText("CONSUMED", sacrifice.x, sacrifice.y, Element.VOID.color, 0.9f));
             }
+        }
+
+        if (program.has(Clause.HEX)) {
+            Entity target = strongestHostilePersistent(owner, lane);
+            if (target != null) {
+                applyHex(target, profile, localPower, owner);
+            } else {
+                Entity waiting = new Entity(Kind.ENCHANTMENT, owner, lane, profile.copy());
+                waiting.x = laneX[lane];
+                waiting.y = nodeY + (owner == 0 ? -dp(30f) : dp(30f));
+                waiting.radius = dp(44f);
+                waiting.life = 8f;
+                waiting.powerScale = localPower;
+                waiting.hexWaiting = true;
+                waiting.program = program.copy();
+                entities.add(waiting);
+                floatingTexts.add(new FloatingText("HEX WAITS", waiting.x, waiting.y, Element.VOID.color, 0.9f));
+            }
+            rewardCast(owner, quality, program, localPower);
+            return;
         }
 
         if (program.has(Clause.BIND)) {
@@ -928,6 +1272,7 @@ public final class ArcaneDuelView extends View {
 
         Entity entity;
         boolean anchored = program.has(Clause.ANCHOR);
+        boolean swift = program.has(Clause.SWIFT);
         switch (program.form) {
             case LANCE:
                 entity = createProjectile(owner, lane, profile, 12.8f * (0.72f + quality * 0.52f),
@@ -938,8 +1283,63 @@ public final class ArcaneDuelView extends View {
                     entity.damage *= 1.20f;
                     entity.anchored = true;
                 }
+                if (swift) {
+                    entity.velocity *= 1.35f;
+                    entity.radius *= 0.85f;
+                    entity.damage *= 0.92f;
+                }
                 entities.add(entity);
                 break;
+            case SURGE:
+                entity = new Entity(Kind.SURGE, owner, lane, profile.copy());
+                entity.x = laneX[lane];
+                entity.y = owner == 0 ? fieldBottom - dp(20f) : fieldTop + dp(20f);
+                entity.radius = dp(34f) * (1f + profile.mass * 0.06f + profile.moisture * 0.05f);
+                float surgeSpeed = dp(72f) * selectedTempo.projectileScale
+                        * (0.82f + profile.impulse * 0.12f);
+                if (laneTraits[lane] == LaneTrait.LEY_CURRENT) surgeSpeed *= 1.18f;
+                entity.velocity = owner == 0 ? -surgeSpeed : surgeSpeed;
+                entity.damage = 8.5f * profile.force() * localPower;
+                entity.program = program.copy();
+                entity.powerScale = localPower;
+                if (anchored) { entity.radius *= 1.25f; entity.velocity *= 0.75f; entity.damage *= 1.15f; entity.anchored = true; }
+                if (swift) { entity.velocity *= 1.30f; entity.radius *= 0.88f; }
+                entities.add(entity);
+                break;
+            case RIFT:
+                entity = new Entity(Kind.RIFT, owner, lane, profile.copy());
+                entity.x = laneX[lane];
+                entity.y = owner == 0 ? fieldTop + (fieldBottom - fieldTop) * 0.34f
+                        : fieldBottom - (fieldBottom - fieldTop) * 0.34f;
+                entity.radius = dp(30f) * (1f + profile.aether * 0.10f);
+                entity.hp = 12f * profile.stability() * localPower;
+                entity.life = 12f * profile.stability();
+                entity.timer = 3f;
+                entity.damage = 2f;
+                entity.program = program.copy();
+                entity.powerScale = localPower;
+                if (laneTraits[lane] == LaneTrait.BEDROCK) entity.hp *= 1.30f;
+                if (anchored) { entity.life *= 1.35f; entity.hp *= 1.30f; entity.timer += 1f; entity.anchored = true; }
+                entities.add(entity);
+                break;
+            case AURA: {
+                Entity previous = findAura(owner);
+                if (previous != null) previous.dead = true;
+                entity = new Entity(Kind.AURA, owner, lane, profile.copy());
+                entity.x = laneX[lane];
+                entity.y = owner == 0 ? fieldBottom - dp(34f) : fieldTop + dp(34f);
+                entity.radius = dp(22f) * (1f + profile.aether * 0.08f + profile.radiance * 0.06f);
+                entity.hp = 13f * profile.stability() * localPower;
+                entity.life = 15f * profile.stability();
+                entity.damage = 1f;
+                entity.program = program.copy();
+                entity.powerScale = localPower;
+                if (laneTraits[lane] == LaneTrait.BEDROCK) entity.hp *= 1.30f;
+                if (anchored) { entity.life *= 1.40f; entity.hp *= 1.30f; entity.anchored = true; }
+                entities.add(entity);
+                floatingTexts.add(new FloatingText("AURA STANDS", entity.x, entity.y, BRIGHT_GOLD, 1f));
+                break;
+            }
             case WARD:
                 entity = new Entity(Kind.WARD, owner, lane, profile.copy());
                 entity.x = laneX[lane];
@@ -951,6 +1351,7 @@ public final class ArcaneDuelView extends View {
                 entity.program = program.copy();
                 entity.powerScale = localPower;
                 if (owner == 0 && selectedArtifact == Artifact.AEGIS_BELL) { entity.hp *= 1.30f; entity.life *= 1.18f; }
+                if (laneTraits[lane] == LaneTrait.BEDROCK) entity.hp *= 1.30f;
                 if (anchored) { entity.hp *= 1.42f; entity.life *= 1.38f; entity.radius *= 1.12f; entity.anchored = true; }
                 entities.add(entity);
                 break;
@@ -966,7 +1367,9 @@ public final class ArcaneDuelView extends View {
                 entity.program = program.copy();
                 entity.powerScale = localPower;
                 if (owner == 0 && selectedArtifact == Artifact.AEGIS_BELL) { entity.hp *= 1.24f; entity.life *= 1.15f; }
+                if (laneTraits[lane] == LaneTrait.BEDROCK) entity.hp *= 1.30f;
                 if (anchored) { entity.hp *= 1.34f; entity.life *= 1.34f; entity.anchored = true; }
+                if (swift) { entity.swift = true; entity.damage *= 0.92f; }
                 entities.add(entity);
                 break;
             case BURST:
@@ -981,6 +1384,7 @@ public final class ArcaneDuelView extends View {
                 entity.program = program.copy();
                 entity.powerScale = localPower;
                 if (anchored) { entity.radius *= 1.30f; entity.damage *= 1.18f; entity.timer *= 1.18f; entity.anchored = true; }
+                if (swift) { entity.timer *= 0.70f; entity.damage *= 0.94f; }
                 entities.add(entity);
                 break;
             case BEAM:
@@ -990,6 +1394,8 @@ public final class ArcaneDuelView extends View {
                 entity.radius = dp(15f) * (1f + profile.charge * 0.10f + profile.aether * 0.08f);
                 entity.damage = 14f * profile.force() * localPower;
                 entity.life = anchored ? 0.72f : 0.42f;
+                if (lightShaftLane == lane && lightShaftTimer > 0f) entity.damage *= 1.25f;
+                if (swift) { entity.life *= 0.80f; entity.damage *= 0.94f; }
                 entity.program = program.copy();
                 entity.powerScale = localPower;
                 entity.anchored = anchored;
@@ -1006,6 +1412,7 @@ public final class ArcaneDuelView extends View {
                 entity.damage = 3f + profile.heat + profile.entropy;
                 entity.program = program.copy();
                 entity.powerScale = localPower;
+                if (laneTraits[lane] == LaneTrait.BEDROCK) entity.hp *= 1.30f;
                 if (anchored) { entity.life *= 1.45f; entity.hp *= 1.35f; entity.radius *= 1.18f; entity.anchored = true; }
                 entities.add(entity);
                 attuneNode(nodes[lane], owner, profile, 28f * localPower);
@@ -1051,6 +1458,7 @@ public final class ArcaneDuelView extends View {
         float speed = dp(120f) * selectedTempo.projectileScale
                 * (0.82f + profile.impulse * 0.16f + profile.charge * 0.10f);
         if (selectedArena == ArenaType.TIDAL_ARCHIVE) speed *= 0.88f;
+        if (laneTraits[lane] == LaneTrait.LEY_CURRENT) speed *= 1.18f;
         entity.velocity = owner == 0 ? -speed : speed;
         entity.program = program == null ? null : program.copy();
         entity.powerScale = powerScale;
@@ -1075,8 +1483,29 @@ public final class ArcaneDuelView extends View {
         for (Entity entity : entities) {
             if (entity.dead || entity.owner != owner || entity.lane != lane) continue;
             if (entity.kind != Kind.GLYPH && entity.kind != Kind.FIELD
-                    && entity.kind != Kind.WARD && entity.kind != Kind.ORBIT) continue;
+                    && entity.kind != Kind.WARD && entity.kind != Kind.ORBIT
+                    && entity.kind != Kind.RIFT && entity.kind != Kind.AURA) continue;
             float candidate = entity.life + entity.hp * 0.1f + entity.profile.force();
+            if (candidate > score) { score = candidate; best = entity; }
+        }
+        return best;
+    }
+
+    private Entity findAura(int owner) {
+        for (Entity entity : entities) {
+            if (!entity.dead && entity.kind == Kind.AURA && entity.owner == owner) return entity;
+        }
+        return null;
+    }
+
+    private Entity strongestHostilePersistent(int owner, int lane) {
+        Entity best = null;
+        float score = -1f;
+        for (Entity entity : entities) {
+            if (entity.dead || entity.owner == owner || entity.owner == OWNER_ENVIRONMENT
+                    || entity.lane != lane) continue;
+            if (!isConstruct(entity) && entity.kind != Kind.RIFT) continue;
+            float candidate = entity.hp + entity.damage * 0.6f + entity.life * 0.4f;
             if (candidate > score) { score = candidate; best = entity; }
         }
         return best;
@@ -1104,7 +1533,8 @@ public final class ArcaneDuelView extends View {
     }
 
     private boolean isConstruct(Entity entity) {
-        return entity.kind == Kind.WARD || entity.kind == Kind.ORBIT || entity.kind == Kind.GLYPH;
+        return entity.kind == Kind.WARD || entity.kind == Kind.ORBIT || entity.kind == Kind.GLYPH
+                || entity.kind == Kind.AURA;
     }
 
     private Entity nearestHostileInLane(int owner, int lane, boolean includeProjectiles) {
@@ -1166,6 +1596,17 @@ public final class ArcaneDuelView extends View {
         } else {
             Reaction reaction = analyzeReaction(projectile.profile, node.profile);
             float attack = projectile.damage * projectile.profile.force();
+            if (hasClause(projectile, Clause.SIPHON)) {
+                boolean hexwright = projectile.owner == 0 && selectedArtifact == Artifact.HEXWRIGHT_RING;
+                float drain = attack * (hexwright ? 0.55f : 0.42f);
+                node.charge -= drain;
+                projectile.profile.blend(node.profile, 0.15f);
+                projectile.damage *= 1.08f;
+                floatingTexts.add(new FloatingText("SIPHON", projectile.x, nodeY, Element.VOID.color, 0.9f));
+                spawnArc(projectile.x, nodeY, projectile.profileColor(), 10);
+                if (node.charge <= 0f) attuneNode(node, projectile.owner, projectile.profile, 12f);
+                return;
+            }
             node.charge -= attack * (0.30f + reaction.strength * 0.05f);
             projectile.damage *= Math.max(0.55f, 0.88f - node.profile.stability() * 0.05f);
             if (reaction.type == ReactionType.NULL_FLUX) {
@@ -1227,7 +1668,82 @@ public final class ArcaneDuelView extends View {
         node.owner = owner;
         float multiplier = selectedArtifact == Artifact.LEY_KEY && owner == 0 ? 1.30f : 1f;
         if (selectedArena == ArenaType.ASTRAL_COURT) multiplier *= 1.15f;
+        for (int lane = 0; lane < 3; lane++) {
+            if (nodes[lane] == node && laneTraits[lane] == LaneTrait.THIN_VEIL) multiplier *= 1.40f;
+        }
         node.charge = Math.min(100f, Math.max(0f, node.charge) + amount * multiplier);
+    }
+
+    /**
+     * The arena periodically intervenes in the duel. Hazard fields are owned by
+     * OWNER_ENVIRONMENT so they treat both duelists as hostile.
+     */
+    private void fireArenaEvent() {
+        arenaEventTimer = 11f + random.nextFloat() * 5f;
+        int lane = random.nextInt(3);
+        float y = nodeY + (random.nextFloat() - 0.5f) * (fieldBottom - fieldTop) * 0.32f;
+        switch (selectedArena) {
+            case EMBER_VAULT: {
+                Profile molten = new Profile();
+                molten.heat = 1.25f;
+                molten.mass = 0.8f;
+                molten.volatility = 0.4f;
+                molten.recalculate();
+                molten.label = "Molten Vent";
+                Entity vent = createField(OWNER_ENVIRONMENT, lane, y, molten, 5.5f);
+                entities.add(vent);
+                spawnShockwave(vent.x, vent.y, Element.FIRE.color, vent.radius * 1.6f);
+                addShake(dp(4f));
+                showBanner("VENT ERUPTION — " + laneName(lane).toUpperCase(Locale.US) + " LANE", 1.4f);
+                break;
+            }
+            case TIDAL_ARCHIVE:
+                tideSurgeTimer = 3.5f;
+                for (int i = 0; i < 3; i++) spawnShockwave(laneX[i], nodeY, Element.WATER.color, dp(70f));
+                showBanner("TIDE SURGE — SPELLS SLOWED AND SOAKED", 1.4f);
+                break;
+            case SHATTERED_CROWN: {
+                Profile fracture = new Profile();
+                fracture.mass = 1.0f;
+                fracture.impulse = 0.9f;
+                fracture.cold = 0.3f;
+                fracture.recalculate();
+                fracture.label = "Fracture";
+                Entity scar = createField(OWNER_ENVIRONMENT, lane, y, fracture, 5f);
+                entities.add(scar);
+                spawnShockwave(scar.x, scar.y, Element.STONE.color, scar.radius * 1.5f);
+                addShake(dp(5f));
+                showBanner("FRACTURE — " + laneName(lane).toUpperCase(Locale.US) + " LANE TEARS OPEN", 1.4f);
+                break;
+            }
+            case VERDANT_REACH: {
+                Profile bloom = new Profile();
+                bloom.growth = 1.3f;
+                bloom.moisture = 0.6f;
+                bloom.cohesion = 0.4f;
+                bloom.recalculate();
+                bloom.label = "Bloom";
+                Entity garden = createField(OWNER_ENVIRONMENT, lane, y, bloom, 6f);
+                entities.add(garden);
+                spawnShockwave(garden.x, garden.y, Element.VERDANCE.color, garden.radius * 1.5f);
+                showBanner("BLOOM — CONSTRUCTS MEND IN THE " + laneName(lane).toUpperCase(Locale.US) + " LANE", 1.4f);
+                break;
+            }
+            case RADIANT_BASILICA:
+                lightShaftLane = lane;
+                lightShaftTimer = 4.5f;
+                spawnShockwave(laneX[lane], nodeY, Element.RADIANCE.color, dp(90f));
+                showBanner("LIGHT SHAFT — " + laneName(lane).toUpperCase(Locale.US) + " LANE CONSECRATED", 1.4f);
+                break;
+            case ASTRAL_COURT:
+            default: {
+                LeyNode node = nodes[lane];
+                node.charge = Math.min(100f, node.charge + (node.owner >= 0 ? 30f : 16f));
+                spawnShockwave(laneX[lane], nodeY, BRIGHT_GOLD, dp(60f));
+                showBanner("LEY SURGE — " + laneName(lane).toUpperCase(Locale.US) + " NODE FLARES", 1.4f);
+                break;
+            }
+        }
     }
 
     private Profile baseNodeProfile() {
@@ -1235,13 +1751,18 @@ public final class ArcaneDuelView extends View {
         if (selectedArena == ArenaType.EMBER_VAULT) profile.heat = 0.35f;
         else if (selectedArena == ArenaType.TIDAL_ARCHIVE) profile.moisture = 0.35f;
         else if (selectedArena == ArenaType.SHATTERED_CROWN) { profile.mass = 0.18f; profile.volatility = 0.22f; }
+        else if (selectedArena == ArenaType.VERDANT_REACH) { profile.growth = 0.35f; profile.moisture = 0.10f; }
+        else if (selectedArena == ArenaType.RADIANT_BASILICA) { profile.radiance = 0.35f; profile.cohesion = 0.10f; }
         else profile.aether = 0.30f;
         profile.recalculate();
         profile.label = selectedArena.label;
         return profile;
     }
 
-    private enum ReactionType { RESONANCE, STEAM, THERMAL_SHOCK, CONDUCTION, MAGMA, BLIZZARD, SHATTER, NULL_FLUX, CORROSION }
+    private enum ReactionType {
+        RESONANCE, STEAM, THERMAL_SHOCK, CONDUCTION, MAGMA, BLIZZARD, SHATTER, NULL_FLUX, CORROSION,
+        WILDFIRE, OVERGROWTH, SANCTIFY, ECLIPSE
+    }
 
     private static final class Reaction {
         final ReactionType type;
@@ -1266,6 +1787,10 @@ public final class ArcaneDuelView extends View {
         float shatter = a.mass * b.impulse + b.mass * a.impulse + a.cold * b.mass + b.cold * a.mass;
         float nullFlux = a.aether * b.entropy + b.aether * a.entropy;
         float corrosion = a.entropy * (b.moisture + b.cohesion) + b.entropy * (a.moisture + a.cohesion);
+        float wildfire = a.heat * b.growth + b.heat * a.growth;
+        float overgrowth = a.growth * b.moisture + b.growth * a.moisture;
+        float sanctify = a.radiance * b.cohesion + b.radiance * a.cohesion;
+        float eclipse = a.radiance * b.entropy + b.radiance * a.entropy;
 
         float best = 0.28f;
         Reaction result = new Reaction(ReactionType.RESONANCE, reactionStrength(a, b), "RESONANCE", BRIGHT_GOLD);
@@ -1276,6 +1801,10 @@ public final class ArcaneDuelView extends View {
         if (blizzard > best) { best = blizzard; result = new Reaction(ReactionType.BLIZZARD, blizzard, "BLIZZARD", Element.FROST.color); }
         if (shatter > best) { best = shatter; result = new Reaction(ReactionType.SHATTER, shatter, "SHATTER", Element.STONE.color); }
         if (nullFlux > best) { best = nullFlux; result = new Reaction(ReactionType.NULL_FLUX, nullFlux, "NULL FLUX", Element.VOID.color); }
+        if (wildfire > best) { best = wildfire; result = new Reaction(ReactionType.WILDFIRE, wildfire, "WILDFIRE", Color.rgb(255, 150, 40)); }
+        if (overgrowth > best) { best = overgrowth; result = new Reaction(ReactionType.OVERGROWTH, overgrowth, "OVERGROWTH", Element.VERDANCE.color); }
+        if (sanctify > best) { best = sanctify; result = new Reaction(ReactionType.SANCTIFY, sanctify, "SANCTIFY", Element.RADIANCE.color); }
+        if (eclipse > best) { best = eclipse; result = new Reaction(ReactionType.ECLIPSE, eclipse, "ECLIPSE", Color.rgb(240, 200, 255)); }
         if (corrosion > best) result = new Reaction(ReactionType.CORROSION, corrosion, "CORROSION", Color.rgb(210, 86, 151));
         return result;
     }
@@ -1320,6 +1849,8 @@ public final class ArcaneDuelView extends View {
         if (threat != null && isConstruct(threat)) program.form = random.nextBoolean() ? Form.LANCE : Form.BEAM;
         else if (hostilePressure > 12f) program.form = random.nextBoolean() ? Form.BURST : Form.GLYPH;
         else program.form = Form.values()[random.nextInt(Form.values().length)];
+        // The rival keeps at most one aura; recasting one immediately would waste it.
+        if (program.form == Form.AURA && findAura(1) != null) program.form = Form.LANCE;
 
         int clauseCount = selectedDifficulty == Difficulty.APPRENTICE ? (random.nextFloat() < 0.35f ? 1 : 0)
                 : selectedDifficulty == Difficulty.ADEPT ? random.nextInt(3) : 1 + random.nextInt(3);
@@ -1395,7 +1926,9 @@ public final class ArcaneDuelView extends View {
         if (profile.cold > best) { best = profile.cold; result = Element.FROST; }
         if (profile.charge > best) { best = profile.charge; result = Element.LIGHTNING; }
         if (profile.aether > best) { best = profile.aether; result = Element.AETHER; }
-        if (profile.entropy > best) result = Element.VOID;
+        if (profile.entropy > best) { best = profile.entropy; result = Element.VOID; }
+        if (profile.radiance > best) { best = profile.radiance; result = Element.RADIANCE; }
+        if (profile.growth > best) result = Element.VERDANCE;
         return result;
     }
 
@@ -1408,7 +1941,9 @@ public final class ArcaneDuelView extends View {
             case FROST: return Element.FIRE;
             case LIGHTNING: return Element.STONE;
             case AETHER: return Element.VOID;
-            case VOID: return Element.AETHER;
+            case VOID: return Element.RADIANCE;
+            case RADIANCE: return Element.VOID;
+            case VERDANCE: return Element.FIRE;
             default: return Element.WATER;
         }
     }
@@ -1429,7 +1964,18 @@ public final class ArcaneDuelView extends View {
         pendingCasts.clear();
         particles.clear();
         floatingTexts.clear();
+        shockwaves.clear();
         damageDealt = reactionsWon = manualCasts = 0;
+        arenaEventTimer = 9f + random.nextFloat() * 4f;
+        tideSurgeTimer = 0f;
+        lightShaftLane = -1;
+        lightShaftTimer = 0f;
+        shakeTimer = 0f;
+        shakeMagnitude = 0f;
+        ArrayList<LaneTrait> traitPool = new ArrayList<LaneTrait>();
+        Collections.addAll(traitPool, LaneTrait.values());
+        Collections.shuffle(traitPool, random);
+        for (int lane = 0; lane < 3; lane++) laneTraits[lane] = traitPool.get(lane);
         for (LeyNode node : nodes) {
             node.owner = -1;
             node.charge = selectedArena == ArenaType.ASTRAL_COURT ? 18f : 10f;
@@ -1850,7 +2396,7 @@ public final class ArcaneDuelView extends View {
         if (event.getActionMasked() != MotionEvent.ACTION_UP) return true;
         if (codexBack.contains(x, y)) { screen = Screen.TITLE; return true; }
         if (codexPrev.contains(x, y)) { codexPage = Math.max(0, codexPage - 1); return true; }
-        if (codexNext.contains(x, y)) { codexPage = Math.min(3, codexPage + 1); return true; }
+        if (codexNext.contains(x, y)) { codexPage = Math.min(4, codexPage + 1); return true; }
         if (codexPractice.contains(x, y)) { startDuel(true); return true; }
         return true;
     }
@@ -1875,23 +2421,65 @@ public final class ArcaneDuelView extends View {
 
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(1f));
-        paint.setColor(Color.argb(34, 255, 225, 146));
-        float spacing = dp(46f);
+        paint.setColor(Color.argb(22, 255, 225, 146));
+        float spacing = dp(52f);
         for (float x = -getHeight(); x < getWidth() + getHeight(); x += spacing) {
             canvas.drawLine(x, 0, x - getHeight() * 0.22f, getHeight(), paint);
         }
+
+        // Giant ley circle watermark rotating slowly behind the play field.
+        float wx = getWidth() * 0.5f;
+        float wy = (fieldTop + fieldBottom) * 0.5f;
+        float wr = getWidth() * 0.58f;
+        canvas.save();
+        canvas.rotate(uiClock * 2.1f, wx, wy);
+        paint.setColor(Color.argb(16, 255, 225, 146));
+        paint.setStrokeWidth(dp(1.2f));
+        canvas.drawCircle(wx, wy, wr, paint);
+        canvas.drawCircle(wx, wy, wr * 0.84f, paint);
+        drawArcanePolygonAlpha(canvas, wx, wy, wr * 0.92f, 8, 16);
+        drawArcanePolygonAlpha(canvas, wx, wy, wr * 0.66f, 6, 12);
+        for (int i = 0; i < 8; i++) {
+            float a = (float) (Math.PI * 2.0 * i / 8.0);
+            canvas.drawLine(wx + (float) Math.cos(a) * wr * 0.84f, wy + (float) Math.sin(a) * wr * 0.84f,
+                    wx + (float) Math.cos(a) * wr, wy + (float) Math.sin(a) * wr, paint);
+        }
+        canvas.restore();
+
         paint.setStyle(Paint.Style.FILL);
-        for (int i = 0; i < 34; i++) {
-            float x = ((i * 83) % Math.max(1, getWidth())) + (float) Math.sin(i * 2.7 + duelClock * 0.1f) * dp(6f);
-            float y = ((i * 137) % Math.max(1, getHeight()));
-            paint.setColor(Color.argb(18 + (i % 3) * 8, 255, 225, 146));
+        for (int i = 0; i < 40; i++) {
+            float x = ((i * 83) % Math.max(1, getWidth())) + (float) Math.sin(i * 2.7 + uiClock * 0.14f) * dp(8f);
+            float y = ((i * 137) % Math.max(1, getHeight())) - uiClock * dp(1.4f + (i % 3)) % Math.max(1, getHeight());
+            if (y < 0) y += getHeight();
+            paint.setColor(Color.argb(16 + (i % 3) * 9, 255, 225, 146));
             canvas.drawCircle(x, y, dp(0.7f + (i % 2) * 0.5f), paint);
         }
+
+        // Vignette pulls the eye toward the play field.
+        paint.setShader(new RadialGradient(getWidth() * 0.5f, getHeight() * 0.44f,
+                Math.max(getWidth(), getHeight()) * 0.78f,
+                new int[]{Color.TRANSPARENT, Color.TRANSPARENT, Color.argb(150, 3, 3, 8)},
+                new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP));
+        canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
+        paint.setShader(null);
+    }
+
+    private void drawArcanePolygonAlpha(Canvas canvas, float cx, float cy, float radius, int sides, int alpha) {
+        Path path = new Path();
+        for (int i = 0; i <= sides; i++) {
+            float angle = (float) (-Math.PI / 2.0 + Math.PI * 2.0 * i / sides);
+            float x = cx + (float) Math.cos(angle) * radius;
+            float y = cy + (float) Math.sin(angle) * radius;
+            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+        }
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setColor(Color.argb(alpha, 255, 225, 146));
+        canvas.drawPath(path, paint);
     }
 
     private void drawTitle(Canvas canvas) {
         float cx = getWidth() * 0.5f;
-        drawArcaneCrest(canvas, cx, dp(74f), dp(48f), duelClock * 8f);
+        drawArcaneCrest(canvas, cx, dp(74f), dp(48f), uiClock * 8f);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(UI_MEDIUM);
         paint.setTextSize(sp(29f));
@@ -1937,6 +2525,8 @@ public final class ArcaneDuelView extends View {
             case ASHEN_QUILL: return "precision";
             case AEGIS_BELL: return "constructs";
             case LEY_KEY: return "nodes";
+            case HEXWRIGHT_RING: return "curses";
+            case VERDANT_CHALICE: return "growth";
             default: return "executables";
         }
     }
@@ -1946,6 +2536,8 @@ public final class ArcaneDuelView extends View {
             case ASTRAL_COURT: return "resonance";
             case EMBER_VAULT: return "heat";
             case TIDAL_ARCHIVE: return "conduction";
+            case VERDANT_REACH: return "growth";
+            case RADIANT_BASILICA: return "light";
             default: return "fracture";
         }
     }
@@ -2072,19 +2664,20 @@ public final class ArcaneDuelView extends View {
         paint.setTextSize(sp(25f));
         paint.setColor(IVORY);
         String title = codexPage == 0 ? "SIGIL CODEX" : codexPage == 1 ? "FORM RUNES"
-                : codexPage == 2 ? "CLAUSE SYNTAX" : "LEY ARCHITECTURE";
+                : codexPage == 2 ? "CLAUSE SYNTAX" : codexPage == 3 ? "LEY ARCHITECTURE" : "THE LIVING WEAVE";
         canvas.drawText(title, getWidth() * 0.5f, dp(55f), paint);
         paint.setTypeface(UI_REGULAR);
         paint.setTextSize(sp(12f));
         paint.setColor(MUTED);
-        canvas.drawText((codexPage + 1) + " / 4", getWidth() * 0.5f, dp(76f), paint);
+        canvas.drawText((codexPage + 1) + " / 5", getWidth() * 0.5f, dp(76f), paint);
 
         RectF page = new RectF(dp(14f), dp(94f), getWidth() - dp(14f), getHeight() - dp(82f));
         drawMetalPanel(canvas, page, false, selectedArena.accent);
         if (codexPage == 0) drawElementCodex(canvas, page);
         else if (codexPage == 1) drawFormCodex(canvas, page);
         else if (codexPage == 2) drawClauseCodex(canvas, page);
-        else drawArenaCodex(canvas, page);
+        else if (codexPage == 3) drawArenaCodex(canvas, page);
+        else drawInteractionCodex(canvas, page);
 
         drawSmallGoldButton(canvas, codexPrev, "PREV", false);
         drawSmallGoldButton(canvas, codexNext, "NEXT", false);
@@ -2093,9 +2686,9 @@ public final class ArcaneDuelView extends View {
 
     private void drawElementCodex(Canvas canvas, RectF page) {
         float margin = dp(12f);
-        float gap = dp(8f);
+        float gap = dp(7f);
         float cardW = (page.width() - margin * 2f - gap) / 2f;
-        float cardH = (page.height() - margin * 2f - gap * 3f) / 4f;
+        float cardH = (page.height() - margin * 2f - gap * 4f) / 5f;
         for (int i = 0; i < Element.values().length; i++) {
             int column = i % 2;
             int row = i / 2;
@@ -2105,29 +2698,29 @@ public final class ArcaneDuelView extends View {
                     page.top + margin + row * (cardH + gap) + cardH);
             Element element = Element.values()[i];
             drawMetalPanel(canvas, rect, false, element.color);
-            drawMiniGlyph(canvas, element, rect.left + dp(31f), rect.centerY(), dp(23f), 1f);
+            drawMiniGlyph(canvas, element, rect.left + dp(26f), rect.centerY(), dp(17f), 1f);
             paint.setTextAlign(Paint.Align.LEFT);
             paint.setTypeface(UI_MEDIUM);
-            paint.setTextSize(sp(13f));
+            paint.setTextSize(sp(12f));
             paint.setColor(IVORY);
-            canvas.drawText(element.label, rect.left + dp(62f), rect.top + dp(27f), paint);
+            canvas.drawText(element.label, rect.left + dp(52f), rect.centerY() - dp(7f), paint);
             paint.setTypeface(UI_REGULAR);
-            paint.setTextSize(sp(10.5f));
+            paint.setTextSize(sp(9.5f));
             paint.setColor(element.color);
-            canvas.drawText(element.glyphHint, rect.left + dp(62f), rect.top + dp(45f), paint);
+            canvas.drawText(element.glyphHint, rect.left + dp(52f), rect.centerY() + dp(8f), paint);
             paint.setColor(MUTED);
-            drawWrappedText(canvas, element.subtitle, rect.left + dp(62f), rect.top + dp(62f),
-                    rect.width() - dp(72f), sp(10.5f), dp(14f), 2, Paint.Align.LEFT);
+            canvas.drawText(ellipsize(element.subtitle, rect.width() - dp(60f), paint),
+                    rect.left + dp(52f), rect.centerY() + dp(22f), paint);
         }
     }
 
     private void drawFormCodex(Canvas canvas, RectF page) {
-        float margin = dp(12f), gap = dp(9f);
-        float cardW = (page.width() - margin * 2f - gap) / 2f;
+        float margin = dp(12f), gap = dp(8f);
+        float cardW = (page.width() - margin * 2f - gap * 2f) / 3f;
         float cardH = (page.height() - margin * 2f - gap * 2f) / 3f;
         for (int i = 0; i < Form.values().length; i++) {
-            int column = i % 2;
-            int row = i / 2;
+            int column = i % 3;
+            int row = i / 3;
             RectF rect = new RectF(page.left + margin + column * (cardW + gap),
                     page.top + margin + row * (cardH + gap),
                     page.left + margin + column * (cardW + gap) + cardW,
@@ -2137,9 +2730,9 @@ public final class ArcaneDuelView extends View {
     }
 
     private void drawClauseCodex(Canvas canvas, RectF page) {
-        float margin = dp(12f), gap = dp(8f);
+        float margin = dp(12f), gap = dp(7f);
         float cardW = (page.width() - margin * 2f - gap) / 2f;
-        float cardH = (page.height() - margin * 2f - gap * 3f) / 4f;
+        float cardH = (page.height() - margin * 2f - gap * 5f) / 6f;
         for (int i = 0; i < Clause.values().length; i++) {
             int column = i % 2;
             int row = i / 2;
@@ -2160,27 +2753,49 @@ public final class ArcaneDuelView extends View {
         paint.setTypeface(UI_REGULAR);
         paint.setTextSize(sp(12f));
         paint.setColor(IVORY);
-        String body = "Each lane contains a contestable ley node. Passing allied spells inherit part of its profile; hostile spells fight its charge. "
-                + "Glyph forms inscribe the node, Relay routes through owned nodes, Consume sacrifices a persistent spell, and Bind enchants an allied spell already in motion.\n\n"
-                + "Reactions are computed from channels: heat + moisture creates steam, charge + moisture conducts, heat + cold causes thermal shock, "
-                + "aether + entropy collapses into null flux, and mass combined with impulse or frost shatters into cross-lane fragments.";
-        drawWrappedText(canvas, body, page.left + dp(18f), page.top + dp(66f), page.width() - dp(36f), sp(12f), dp(18f), 12, Paint.Align.LEFT);
+        String body = "Each lane contains a contestable ley node and a lane trait rolled at the start of every duel. "
+                + "Passing allied spells inherit part of a node's profile; hostile spells fight its charge. "
+                + "Every arena also intervenes: vents erupt, tides surge, lanes fracture, blooms mend, light shafts consecrate, and ley nodes flare. "
+                + "Environmental hazards belong to no one — position around them or Consume, Siphon, and Surge them away.";
+        drawWrappedText(canvas, body, page.left + dp(18f), page.top + dp(62f), page.width() - dp(36f), sp(11f), dp(16f), 8, Paint.Align.LEFT);
 
-        float y = page.top + dp(300f);
+        float y = page.top + dp(206f);
         for (ArenaType arena : ArenaType.values()) {
-            RectF rect = new RectF(page.left + dp(18f), y, page.right - dp(18f), y + dp(70f));
+            RectF rect = new RectF(page.left + dp(18f), y, page.right - dp(18f), y + dp(56f));
+            if (rect.bottom > page.bottom - dp(8f)) break;
             drawMetalPanel(canvas, rect, arena == selectedArena, arena.accent);
+            paint.setTextAlign(Paint.Align.LEFT);
             paint.setTypeface(UI_MEDIUM);
-            paint.setTextSize(sp(13f));
+            paint.setTextSize(sp(12f));
             paint.setColor(IVORY);
-            canvas.drawText(arena.label, rect.left + dp(12f), rect.top + dp(25f), paint);
+            canvas.drawText(arena.label, rect.left + dp(12f), rect.top + dp(22f), paint);
             paint.setTypeface(UI_REGULAR);
-            paint.setTextSize(sp(10.5f));
+            paint.setTextSize(sp(9.8f));
             paint.setColor(MUTED);
-            drawWrappedText(canvas, arena.subtitle, rect.left + dp(12f), rect.top + dp(45f), rect.width() - dp(24f),
-                    sp(10.5f), dp(14f), 2, Paint.Align.LEFT);
-            y += dp(78f);
+            canvas.drawText(ellipsize(arena.subtitle, rect.width() - dp(24f), paint),
+                    rect.left + dp(12f), rect.top + dp(41f), paint);
+            y += dp(62f);
         }
+    }
+
+    private void drawInteractionCodex(Canvas canvas, RectF page) {
+        paint.setTextAlign(Paint.Align.LEFT);
+        paint.setTypeface(UI_MEDIUM);
+        paint.setTextSize(sp(15f));
+        paint.setColor(BRIGHT_GOLD);
+        canvas.drawText("EVERY SPELL CAN MODIFY EVERY SPELL", page.left + dp(18f), page.top + dp(36f), paint);
+        paint.setTypeface(UI_REGULAR);
+        paint.setTextSize(sp(11f));
+        paint.setColor(IVORY);
+        String body = "The mid-board is a stack of interacting objects, not a bullet corridor.\n\n"
+                + "AURA — a global enchantment beside your caster. Every allied cast inherits part of its profile while it stands. One per duelist; it can be beamed, hexed, consumed, or dispelled.\n\n"
+                + "BIND / HEX — Bind enchants an allied object with your profile; Hex is its dark mirror, cursing the strongest hostile persistent object to sap damage, durability, and lifetime.\n\n"
+                + "DISPEL — the removal instant. On contact the hostile spell body is erased outright, and hostile traps, fields, and enchantments are torn up in passing.\n\n"
+                + "SIPHON — inverts friction: hostile fields and nodes are drained into the spell, and construct hits leech mana back to the caster.\n\n"
+                + "CONSUME / TRIGGER / RELAY — sacrifice your own permanents for power, store whole sentences as traps, and route spells through owned nodes.\n\n"
+                + "RIFT — a portal that throws hostile projectiles into another lane; allied spells pass through faster.";
+        drawWrappedText(canvas, body, page.left + dp(18f), page.top + dp(64f), page.width() - dp(36f),
+                sp(11f), dp(15.5f), 40, Paint.Align.LEFT);
     }
 
     private void drawArena(Canvas canvas) {
@@ -2215,7 +2830,40 @@ public final class ArcaneDuelView extends View {
                 float y = fieldTop + (fieldBottom - fieldTop) * segment / 4f;
                 canvas.drawLine(laneRect.left + dp(8f), y, laneRect.right - dp(8f), y, paint);
             }
+
+            if (lightShaftLane == lane && lightShaftTimer > 0f) {
+                float glow = clamp(lightShaftTimer / 1.2f, 0f, 1f);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setShader(new LinearGradient(laneRect.left, 0, laneRect.right, 0,
+                        new int[]{Color.TRANSPARENT,
+                                Color.argb(Math.round(70 * glow), 255, 243, 196),
+                                Color.TRANSPARENT}, null, Shader.TileMode.CLAMP));
+                canvas.drawRect(laneRect, paint);
+                paint.setShader(null);
+            }
+
+            // Lane trait etched at the top of each lane.
+            paint.setStyle(Paint.Style.FILL);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTypeface(UI_MEDIUM);
+            paint.setTextSize(sp(7.6f));
+            paint.setLetterSpacing(0.10f);
+            paint.setColor(Color.argb(165, 255, 225, 146));
+            canvas.drawText(laneTraits[lane].label.toUpperCase(Locale.US), laneX[lane], fieldTop + dp(21f), paint);
+            paint.setLetterSpacing(0f);
+
             drawLeyNode(canvas, lane, nodes[lane]);
+        }
+
+        if (tideSurgeTimer > 0f) {
+            float wave = clamp(tideSurgeTimer / 3.5f, 0f, 1f);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2f));
+            for (int band = 0; band < 3; band++) {
+                float y = fieldTop + (fieldBottom - fieldTop) * ((duelClock * 0.16f + band * 0.33f) % 1f);
+                paint.setColor(Color.argb(Math.round(64 * wave), 71, 194, 228));
+                canvas.drawLine(arena.left + dp(14f), y, arena.right - dp(14f), y, paint);
+            }
         }
 
         drawCaster(canvas, getWidth() * 0.5f, fieldTop + dp(8f), true);
@@ -2238,8 +2886,16 @@ public final class ArcaneDuelView extends View {
         canvas.drawCircle(cx, nodeY, radius * 1.9f, paint);
         paint.setShader(null);
         paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(2f));
+
+        // Charge gauge: a bright arc sweeping with stored ley charge.
+        paint.setStrokeWidth(dp(2.6f));
+        paint.setColor(Color.argb(70, Color.red(color), Color.green(color), Color.blue(color)));
+        RectF gauge = new RectF(cx - radius * 1.28f, nodeY - radius * 1.28f, cx + radius * 1.28f, nodeY + radius * 1.28f);
+        canvas.drawArc(gauge, -90f, 360f, false, paint);
         paint.setColor(color);
+        canvas.drawArc(gauge, -90f, 360f * clamp(node.charge / 100f, 0f, 1f), false, paint);
+
+        paint.setStrokeWidth(dp(2f));
         canvas.drawCircle(cx, nodeY, radius * pulse, paint);
         canvas.save();
         canvas.rotate(duelClock * (node.owner == 1 ? -24f : 24f), cx, nodeY);
@@ -2251,6 +2907,12 @@ public final class ArcaneDuelView extends View {
             float y2 = nodeY + (float) Math.sin(angle) * radius * 0.95f;
             canvas.drawLine(x1, y1, x2, y2, paint);
         }
+        canvas.restore();
+        canvas.save();
+        canvas.rotate(-duelClock * 15f, cx, nodeY);
+        paint.setStrokeWidth(dp(1f));
+        paint.setColor(Color.argb(120, Color.red(color), Color.green(color), Color.blue(color)));
+        drawArcanePolygon(canvas, cx, nodeY, radius * 0.72f, 6, paint.getColor());
         canvas.restore();
         paint.setStyle(Paint.Style.FILL);
         paint.setTextAlign(Paint.Align.CENTER);
@@ -2281,12 +2943,23 @@ public final class ArcaneDuelView extends View {
     private void drawEntity(Canvas canvas, Entity entity) {
         if (entity.dead) return;
         int color = entity.profileColor();
-        for (int i = 0; i < entity.trail.size(); i++) {
-            PointF point = entity.trail.get(i);
-            int alpha = Math.round(20f + 90f * i / Math.max(1, entity.trail.size()));
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color)));
-            canvas.drawCircle(point.x, point.y, entity.radius * (0.18f + 0.28f * i / Math.max(1, entity.trail.size())), paint);
+        // Comet trail: tapering connected segments fading toward the tail.
+        int trailSize = entity.trail.size();
+        if (trailSize > 1) {
+            strokePaint.setStrokeCap(Paint.Cap.ROUND);
+            for (int i = 1; i < trailSize; i++) {
+                PointF previous = entity.trail.get(i - 1);
+                PointF point = entity.trail.get(i);
+                float t = i / (float) trailSize;
+                strokePaint.setStrokeWidth(entity.radius * (0.25f + 0.85f * t));
+                strokePaint.setColor(Color.argb(Math.round(18f + 110f * t),
+                        Color.red(color), Color.green(color), Color.blue(color)));
+                canvas.drawLine(previous.x, previous.y, point.x, point.y, strokePaint);
+            }
+            PointF last = entity.trail.get(trailSize - 1);
+            strokePaint.setStrokeWidth(entity.radius * 0.55f);
+            strokePaint.setColor(Color.argb(150, Color.red(color), Color.green(color), Color.blue(color)));
+            canvas.drawLine(last.x, last.y, entity.x, entity.y, strokePaint);
         }
 
         if (entity.kind == Kind.PROJECTILE || entity.kind == Kind.SHARD) {
@@ -2295,10 +2968,11 @@ public final class ArcaneDuelView extends View {
             paint.setColor(Color.argb(130, Color.red(color), Color.green(color), Color.blue(color)));
             canvas.drawCircle(entity.x, entity.y, entity.radius * 1.65f, paint);
             paint.setMaskFilter(null);
-            paint.setColor(color);
+            paint.setShader(new RadialGradient(entity.x, entity.y, Math.max(1f, entity.radius),
+                    new int[]{IVORY, color, darken(color, 0.7f)},
+                    new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP));
             canvas.drawCircle(entity.x, entity.y, entity.radius, paint);
-            paint.setColor(IVORY);
-            canvas.drawCircle(entity.x, entity.y, entity.radius * 0.32f, paint);
+            paint.setShader(null);
             drawProfilePips(canvas, entity.profile, entity.x, entity.y + entity.radius + dp(8f), dp(3.2f));
         } else if (entity.kind == Kind.WARD) {
             paint.setStyle(Paint.Style.STROKE);
@@ -2332,15 +3006,90 @@ public final class ArcaneDuelView extends View {
             canvas.restore();
         } else if (entity.kind == Kind.BEAM) {
             float targetY = entity.owner == 0 ? fieldTop : fieldBottom;
+            float flicker = 0.86f + 0.24f * (float) Math.sin(entity.age * 42f);
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(entity.radius * 1.8f);
-            paint.setMaskFilter(new BlurMaskFilter(dp(9f), BlurMaskFilter.Blur.NORMAL));
-            paint.setColor(Color.argb(90, Color.red(color), Color.green(color), Color.blue(color)));
+            paint.setStrokeWidth(entity.radius * 2.1f * flicker);
+            paint.setMaskFilter(new BlurMaskFilter(dp(11f), BlurMaskFilter.Blur.NORMAL));
+            paint.setColor(Color.argb(80, Color.red(color), Color.green(color), Color.blue(color)));
             canvas.drawLine(entity.x, entity.y, entity.x, targetY, paint);
             paint.setMaskFilter(null);
-            paint.setStrokeWidth(entity.radius * 0.45f);
+            paint.setStrokeWidth(entity.radius * 0.85f * flicker);
             paint.setColor(color);
             canvas.drawLine(entity.x, entity.y, entity.x, targetY, paint);
+            paint.setStrokeWidth(entity.radius * 0.30f);
+            paint.setColor(IVORY);
+            canvas.drawLine(entity.x, entity.y, entity.x, targetY, paint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.argb(190, 255, 255, 250));
+            canvas.drawCircle(entity.x, targetY, entity.radius * 0.9f * flicker, paint);
+        } else if (entity.kind == Kind.SURGE) {
+            paint.setStyle(Paint.Style.STROKE);
+            float direction = entity.owner == 0 ? -1f : 1f;
+            for (int band = 0; band < 3; band++) {
+                float offset = direction * band * entity.radius * 0.30f;
+                float sweepTop = entity.y - entity.radius * 0.42f + offset;
+                RectF crest = new RectF(entity.x - entity.radius, sweepTop,
+                        entity.x + entity.radius, sweepTop + entity.radius * 0.84f);
+                paint.setStrokeWidth(dp(3.4f - band * 0.9f));
+                paint.setColor(Color.argb(210 - band * 60, Color.red(color), Color.green(color), Color.blue(color)));
+                canvas.drawArc(crest, direction < 0f ? 200f : 20f, 140f, false, paint);
+            }
+            paint.setMaskFilter(new BlurMaskFilter(dp(8f), BlurMaskFilter.Blur.NORMAL));
+            paint.setStrokeWidth(dp(5f));
+            paint.setColor(Color.argb(90, Color.red(color), Color.green(color), Color.blue(color)));
+            RectF glowCrest = new RectF(entity.x - entity.radius, entity.y - entity.radius * 0.42f,
+                    entity.x + entity.radius, entity.y + entity.radius * 0.42f);
+            canvas.drawArc(glowCrest, direction < 0f ? 200f : 20f, 140f, false, paint);
+            paint.setMaskFilter(null);
+        } else if (entity.kind == Kind.RIFT) {
+            RectF portal = new RectF(entity.x - entity.radius, entity.y - entity.radius * 0.45f,
+                    entity.x + entity.radius, entity.y + entity.radius * 0.45f);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new RadialGradient(entity.x, entity.y, entity.radius,
+                    new int[]{Color.argb(120, Color.red(color), Color.green(color), Color.blue(color)),
+                            Color.argb(30, 8, 6, 16), Color.TRANSPARENT}, null, Shader.TileMode.CLAMP));
+            canvas.drawOval(portal, paint);
+            paint.setShader(null);
+            paint.setStyle(Paint.Style.STROKE);
+            for (int ring = 0; ring < 2; ring++) {
+                float squeeze = 1f - ring * 0.28f;
+                RectF orbit = new RectF(entity.x - entity.radius * squeeze,
+                        entity.y - entity.radius * 0.45f * squeeze,
+                        entity.x + entity.radius * squeeze,
+                        entity.y + entity.radius * 0.45f * squeeze);
+                paint.setStrokeWidth(dp(1.8f - ring * 0.5f));
+                paint.setColor(Color.argb(220 - ring * 90, Color.red(color), Color.green(color), Color.blue(color)));
+                canvas.save();
+                canvas.rotate((ring == 0 ? 1f : -1.6f) * entity.age * 40f, entity.x, entity.y);
+                canvas.drawOval(orbit, paint);
+                canvas.restore();
+            }
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(BRIGHT_GOLD);
+            for (int charge = 0; charge < Math.round(entity.timer); charge++) {
+                canvas.drawCircle(entity.x - dp(10f) + charge * dp(10f), entity.y + entity.radius * 0.62f, dp(2.4f), paint);
+            }
+        } else if (entity.kind == Kind.AURA) {
+            float pulse = 1f + (float) Math.sin(entity.age * 2.4f) * 0.10f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new RadialGradient(entity.x, entity.y, entity.radius * 1.7f,
+                    new int[]{Color.argb(70, Color.red(color), Color.green(color), Color.blue(color)), Color.TRANSPARENT},
+                    null, Shader.TileMode.CLAMP));
+            canvas.drawCircle(entity.x, entity.y, entity.radius * 1.7f, paint);
+            paint.setShader(null);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2f));
+            paint.setColor(BRIGHT_GOLD);
+            canvas.drawCircle(entity.x, entity.y, entity.radius * pulse, paint);
+            canvas.save();
+            canvas.rotate(entity.age * 30f, entity.x, entity.y);
+            drawArcanePolygon(canvas, entity.x, entity.y, entity.radius * 0.78f, 6, color);
+            canvas.restore();
+            canvas.save();
+            canvas.rotate(-entity.age * 18f, entity.x, entity.y);
+            drawArcanePolygon(canvas, entity.x, entity.y, entity.radius * 0.52f, 3, BRIGHT_GOLD);
+            canvas.restore();
+            drawMiniGlyph(canvas, dominantElement(entity.profile), entity.x, entity.y, entity.radius * 0.30f, 1f);
         } else if (entity.kind == Kind.GLYPH || entity.kind == Kind.FIELD
                 || entity.kind == Kind.TRAP || entity.kind == Kind.ENCHANTMENT) {
             float pulse = 1f + (float) Math.sin(entity.age * 3f) * 0.08f;
@@ -2374,6 +3123,25 @@ public final class ArcaneDuelView extends View {
             paint.setColor(BRIGHT_GOLD);
             canvas.drawCircle(entity.x, entity.y, entity.radius * 1.35f, paint);
         }
+        if (entity.hexed) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1.6f));
+            paint.setColor(Element.VOID.color);
+            canvas.save();
+            canvas.rotate(entity.age * -46f, entity.x, entity.y);
+            drawArcanePolygon(canvas, entity.x, entity.y, entity.radius * 1.30f, 5, Element.VOID.color);
+            canvas.restore();
+        }
+        if (entity.empowered) {
+            float sparkAngle = entity.age * 5.2f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(BRIGHT_GOLD);
+            for (int i = 0; i < 2; i++) {
+                float a = sparkAngle + i * (float) Math.PI;
+                canvas.drawCircle(entity.x + (float) Math.cos(a) * entity.radius * 1.5f,
+                        entity.y + (float) Math.sin(a) * entity.radius * 1.5f, dp(2.2f), paint);
+            }
+        }
     }
 
     private void drawHud(Canvas canvas) {
@@ -2403,9 +3171,35 @@ public final class ArcaneDuelView extends View {
         paint.setTextSize(sp(9.5f));
         paint.setColor(IVORY);
         canvas.drawText(Math.round(health) + " HP  " + Math.round(mana) + " M", right - dp(9f), top + dp(40f), paint);
+        if (resonance >= 100f) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1.4f));
+            float glow = 0.5f + 0.5f * (float) Math.sin(duelClock * 6f);
+            paint.setColor(Color.argb(Math.round(120 + 120 * glow), 255, 225, 146));
+            canvas.drawRoundRect(new RectF(right - dp(127f), top + dp(19f), right - dp(7f), top + dp(30f)), dp(4f), dp(4f), paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
         if (!enemy) {
-            paint.setColor(BRIGHT_GOLD);
-            canvas.drawText(String.format(Locale.US, "INK %.1f", playerInk), right - dp(9f), top + dp(15f), paint);
+            // Ink pips: filled diamonds for whole ink, hollow for the fraction ceiling.
+            float pipX = right - dp(12f);
+            for (int pip = 0; pip < 6; pip++) {
+                float fill = clamp(playerInk - pip, 0f, 1f);
+                if (fill <= 0.02f && pip > 0 && playerInk < pip) break;
+                Path diamond = new Path();
+                float px = pipX - pip * dp(13f);
+                float py = top + dp(11f);
+                float r = dp(4f);
+                diamond.moveTo(px, py - r);
+                diamond.lineTo(px + r, py);
+                diamond.lineTo(px, py + r);
+                diamond.lineTo(px - r, py);
+                diamond.close();
+                paint.setStyle(fill >= 0.98f ? Paint.Style.FILL : Paint.Style.STROKE);
+                paint.setStrokeWidth(dp(1f));
+                paint.setColor(fill >= 0.98f ? BRIGHT_GOLD : Color.argb(140, 218, 176, 86));
+                canvas.drawPath(diamond, paint);
+            }
+            paint.setStyle(Paint.Style.FILL);
         }
     }
 
@@ -2458,6 +3252,8 @@ public final class ArcaneDuelView extends View {
         drawStepRail(canvas);
         drawExecutableRibbon(canvas);
 
+        if (composerStep < 4 && !composer.elements.isEmpty()) drawSentencePreview(canvas);
+
         if (composerStep == 0) drawSigilStep(canvas);
         else if (composerStep == 1) {
             drawSectionLabel(canvas, "CHOOSE A FORM RUNE", drawingPad.left, drawingPad.top - dp(4f));
@@ -2465,15 +3261,15 @@ public final class ArcaneDuelView extends View {
                 drawFormCard(canvas, formRects[i], Form.values()[i], composer.form == Form.values()[i], true);
             }
             drawSmallGoldButton(canvas, backStepButton, "BACK", false);
-            drawGoldButton(canvas, continueButton, "CLAUSES", "shape behavior", true);
+            drawGoldButton(canvas, continueButton, "3 · CLAUSES", "shape behavior", true);
         } else if (composerStep == 2) {
-            drawSectionLabel(canvas, "ATTACH UP TO THREE ORDERED CLAUSES", drawingPad.left, drawingPad.top - dp(4f));
+            drawSectionLabel(canvas, "ATTACH UP TO THREE CLAUSES", drawingPad.left, drawingPad.top - dp(4f));
             for (int i = 0; i < clauseRects.length; i++) {
                 Clause clause = Clause.values()[i];
                 drawClauseCard(canvas, clauseRects[i], clause, composer.clauses.indexOf(clause), true);
             }
             drawSmallGoldButton(canvas, backStepButton, "BACK", false);
-            drawGoldButton(canvas, continueButton, "LANE", "commit position", true);
+            drawGoldButton(canvas, continueButton, "4 · LANE", "commit position", true);
         } else if (composerStep == 3) {
             drawLaneStep(canvas);
             drawSmallGoldButton(canvas, backStepButton, "BACK", false);
@@ -2483,18 +3279,59 @@ public final class ArcaneDuelView extends View {
         drawBanner(canvas);
     }
 
+    /** Live sentence readout: the spell as written so far, right-aligned over the stage area. */
+    private void drawSentencePreview(Canvas canvas) {
+        paint.setTextAlign(Paint.Align.RIGHT);
+        paint.setTypeface(UI_REGULAR);
+        paint.setTextSize(sp(8.6f));
+        paint.setColor(BRIGHT_GOLD);
+        String sentence = composer.shortLabel()
+                + (composer.clauses.isEmpty() ? "" : " · " + clauseList(composer.clauses));
+        canvas.drawText(ellipsize(sentence, drawingPad.width() * 0.52f, paint),
+                drawingPad.right, drawingPad.top - dp(4f), paint);
+    }
+
     private void drawStepRail(Canvas canvas) {
-        String[] labels = {"1 SIGILS", "2 FORM", "3 CLAUSES", "4 LANE", "5 CAST"};
+        String[] labels = {"SIGILS", "FORM", "CLAUSES", "LANE", "CAST"};
+        // Golden rail line behind the diamond stations.
+        float railY = stepRects[0].centerY();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1.2f));
+        paint.setColor(Color.argb(110, 218, 176, 86));
+        canvas.drawLine(stepRects[0].centerX(), railY, stepRects[4].centerX(), railY, paint);
+
         for (int i = 0; i < stepRects.length; i++) {
             boolean active = composerStep == i;
             boolean complete = i < composerStep || (i == 0 && !composer.elements.isEmpty())
                     || (i == 3 && selectedLane >= 0);
-            drawMetalPanel(canvas, stepRects[i], active, active ? BRIGHT_GOLD : (complete ? SUCCESS : OLD_GOLD));
+            float cx = stepRects[i].centerX();
+            float r = active ? dp(9f) : dp(7f);
+            Path diamond = new Path();
+            diamond.moveTo(cx, railY - r);
+            diamond.lineTo(cx + r, railY);
+            diamond.lineTo(cx, railY + r);
+            diamond.lineTo(cx - r, railY);
+            diamond.close();
+            if (active) {
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(dp(2f));
+                paint.setMaskFilter(new BlurMaskFilter(dp(4f), BlurMaskFilter.Blur.NORMAL));
+                paint.setColor(Color.argb(150, 255, 225, 146));
+                canvas.drawPath(diamond, paint);
+                paint.setMaskFilter(null);
+            }
+            paint.setStyle(complete || active ? Paint.Style.FILL : Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1.4f));
+            paint.setColor(active ? BRIGHT_GOLD : (complete ? GOLD : Color.argb(150, 116, 82, 35)));
+            canvas.drawPath(diamond, paint);
+            paint.setStyle(Paint.Style.FILL);
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setTypeface(active ? UI_MEDIUM : UI_REGULAR);
-            paint.setTextSize(sp(9.2f));
-            paint.setColor(active ? IVORY : (complete ? Color.rgb(215, 231, 219) : MUTED));
-            canvas.drawText(labels[i], stepRects[i].centerX(), stepRects[i].centerY() + dp(3.5f), paint);
+            paint.setTextSize(sp(7.8f));
+            paint.setLetterSpacing(0.08f);
+            paint.setColor(active ? IVORY : (complete ? BRIGHT_GOLD : MUTED));
+            canvas.drawText(labels[i], cx, stepRects[i].bottom + dp(1f), paint);
+            paint.setLetterSpacing(0f);
         }
     }
 
@@ -2546,7 +3383,7 @@ public final class ArcaneDuelView extends View {
     }
 
     private void drawSigilStep(Canvas canvas) {
-        drawSectionLabel(canvas, "DRAW ELEMENTAL SIGILS — ORDER CHANGES THE COMPILED PROFILE", drawingPad.left, drawingPad.top - dp(4f));
+        drawSectionLabel(canvas, "DRAW SIGILS — ORDER MATTERS", drawingPad.left, drawingPad.top - dp(4f));
         drawSmallGoldButton(canvas, undoButton, "UNDO", false);
         drawSmallGoldButton(canvas, clearButton, "CLEAR", false);
         drawMetalPanel(canvas, drawingPad, true, composer.elements.isEmpty() ? GOLD : composer.elements.get(composer.elements.size() - 1).color);
@@ -2606,7 +3443,7 @@ public final class ArcaneDuelView extends View {
         paint.setColor(MUTED);
         canvas.drawText(composer.elements.size() + "/4", drawingPad.right - dp(8f), drawingPad.bottom - dp(8f), paint);
         drawSmallGoldButton(canvas, backStepButton, "RESET", false);
-        drawGoldButton(canvas, continueButton, "FORM", composer.elements.isEmpty() ? "draw first" : autoName(composer), !composer.elements.isEmpty());
+        drawGoldButton(canvas, continueButton, "2 · FORM", composer.elements.isEmpty() ? "draw first" : autoName(composer), !composer.elements.isEmpty());
     }
 
     private void drawFormCard(Canvas canvas, RectF rect, Form form, boolean selected, boolean detailed) {
@@ -2651,7 +3488,7 @@ public final class ArcaneDuelView extends View {
     }
 
     private void drawLaneStep(Canvas canvas) {
-        drawSectionLabel(canvas, "COMMIT THE SENTENCE TO A LANE", drawingPad.left, drawingPad.top - dp(4f));
+        drawSectionLabel(canvas, "COMMIT TO A LANE", drawingPad.left, drawingPad.top - dp(4f));
         for (int i = 0; i < laneRects.length; i++) {
             boolean selected = selectedLane == i;
             int accent = nodes[i].owner == 0 ? SUCCESS : nodes[i].owner == 1 ? DANGER : selectedArena.accent;
@@ -2661,12 +3498,16 @@ public final class ArcaneDuelView extends View {
             paint.setTypeface(UI_MEDIUM);
             paint.setTextSize(sp(12f));
             paint.setColor(selected ? IVORY : Color.rgb(220, 214, 225));
-            canvas.drawText(laneName(i).toUpperCase(Locale.US), laneRects[i].centerX(), laneRects[i].bottom - dp(27f), paint);
+            canvas.drawText(laneName(i).toUpperCase(Locale.US), laneRects[i].centerX(), laneRects[i].bottom - dp(35f), paint);
             paint.setTypeface(UI_REGULAR);
             paint.setTextSize(sp(9f));
             paint.setColor(nodes[i].owner < 0 ? MUTED : (nodes[i].owner == 0 ? SUCCESS : DANGER));
             String status = nodes[i].owner < 0 ? "neutral node" : (nodes[i].owner == 0 ? "your ley " : "rival ley ") + Math.round(nodes[i].charge);
-            canvas.drawText(status, laneRects[i].centerX(), laneRects[i].bottom - dp(11f), paint);
+            canvas.drawText(status, laneRects[i].centerX(), laneRects[i].bottom - dp(21f), paint);
+            paint.setTextSize(sp(8.2f));
+            paint.setColor(BRIGHT_GOLD);
+            canvas.drawText(ellipsize(laneTraits[i].label + " · " + laneTraits[i].subtitle,
+                    laneRects[i].width() - dp(10f), paint), laneRects[i].centerX(), laneRects[i].bottom - dp(9f), paint);
         }
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(UI_REGULAR);
@@ -2788,6 +3629,15 @@ public final class ArcaneDuelView extends View {
                 p.moveTo(cx - r * 0.75f, cy - r * 0.75f); p.lineTo(cx + r * 0.75f, cy + r * 0.75f);
                 p.moveTo(cx + r * 0.75f, cy - r * 0.75f); p.lineTo(cx - r * 0.75f, cy + r * 0.75f);
                 break;
+            case RADIANCE:
+                p.moveTo(cx - r, cy + r * 0.85f);
+                p.cubicTo(cx - r, cy - r * 0.75f, cx + r, cy - r * 0.75f, cx + r, cy + r * 0.85f);
+                break;
+            case VERDANCE:
+                p.moveTo(cx - r * 0.85f, cy - r * 0.05f);
+                p.lineTo(cx - r * 0.28f, cy + r * 0.85f);
+                p.lineTo(cx + r * 0.85f, cy - r * 0.85f);
+                break;
         }
         return p;
     }
@@ -2821,20 +3671,55 @@ public final class ArcaneDuelView extends View {
 
     private void drawMetalPanel(Canvas canvas, RectF rect, boolean selected, int accent) {
         float radius = dp(7f);
+        // Brushed-metal body: three-stop vertical gradient with a top sheen.
         paint.setStyle(Paint.Style.FILL);
         paint.setShader(new LinearGradient(rect.left, rect.top, rect.left, rect.bottom,
-                selected ? new int[]{Color.rgb(56, 48, 69), Color.rgb(25, 23, 37)}
-                        : new int[]{PANEL_HIGH, PANEL}, null, Shader.TileMode.CLAMP));
+                selected ? new int[]{Color.rgb(62, 54, 76), Color.rgb(34, 30, 48), Color.rgb(23, 21, 34)}
+                        : new int[]{PANEL_HIGH, PANEL, Color.rgb(19, 18, 30)},
+                new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawRoundRect(rect, radius, radius, paint);
         paint.setShader(null);
+        if (selected) {
+            paint.setShader(new RadialGradient(rect.centerX(), rect.top, Math.max(dp(8f), rect.width() * 0.7f),
+                    new int[]{Color.argb(46, Color.red(accent), Color.green(accent), Color.blue(accent)), Color.TRANSPARENT},
+                    null, Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(rect, radius, radius, paint);
+            paint.setShader(null);
+        }
+
+        // Engraved border: gradient gold outer line plus a dark inner seam.
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(selected ? dp(1.8f) : dp(1f));
-        paint.setColor(selected ? accent : Color.argb(125, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        paint.setShader(new LinearGradient(rect.left, rect.top, rect.right, rect.bottom,
+                selected ? new int[]{lighten(accent, 1.25f), accent, darken(accent, 0.6f)}
+                        : new int[]{Color.argb(160, Color.red(accent), Color.green(accent), Color.blue(accent)),
+                                Color.argb(95, Color.red(accent), Color.green(accent), Color.blue(accent)),
+                                Color.argb(140, Color.red(accent), Color.green(accent), Color.blue(accent))},
+                null, Shader.TileMode.CLAMP));
         canvas.drawRoundRect(rect, radius, radius, paint);
+        paint.setShader(null);
         paint.setStrokeWidth(dp(0.7f));
-        paint.setColor(Color.argb(60, 255, 255, 255));
+        paint.setColor(Color.argb(46, 255, 255, 255));
         RectF inset = new RectF(rect.left + dp(3f), rect.top + dp(3f), rect.right - dp(3f), rect.bottom - dp(3f));
         canvas.drawRoundRect(inset, radius * 0.7f, radius * 0.7f, paint);
+
+        // Filigree corner ticks on larger panels.
+        if (rect.width() > dp(64f) && rect.height() > dp(36f)) {
+            float tick = Math.min(dp(9f), rect.height() * 0.22f);
+            paint.setStrokeWidth(dp(1.1f));
+            paint.setColor(selected ? BRIGHT_GOLD
+                    : Color.argb(150, Color.red(GOLD), Color.green(GOLD), Color.blue(GOLD)));
+            float pad = dp(5f);
+            canvas.drawLine(rect.left + pad, rect.top + pad + tick, rect.left + pad, rect.top + pad, paint);
+            canvas.drawLine(rect.left + pad, rect.top + pad, rect.left + pad + tick, rect.top + pad, paint);
+            canvas.drawLine(rect.right - pad - tick, rect.top + pad, rect.right - pad, rect.top + pad, paint);
+            canvas.drawLine(rect.right - pad, rect.top + pad, rect.right - pad, rect.top + pad + tick, paint);
+            canvas.drawLine(rect.left + pad, rect.bottom - pad - tick, rect.left + pad, rect.bottom - pad, paint);
+            canvas.drawLine(rect.left + pad, rect.bottom - pad, rect.left + pad + tick, rect.bottom - pad, paint);
+            canvas.drawLine(rect.right - pad - tick, rect.bottom - pad, rect.right - pad, rect.bottom - pad, paint);
+            canvas.drawLine(rect.right - pad, rect.bottom - pad, rect.right - pad, rect.bottom - pad - tick, paint);
+        }
+
         if (selected) {
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(accent);
@@ -2842,7 +3727,29 @@ public final class ArcaneDuelView extends View {
         }
     }
 
+    private static int lighten(int color, float factor) {
+        return Color.rgb(Math.min(255, Math.round(Color.red(color) * factor)),
+                Math.min(255, Math.round(Color.green(color) * factor)),
+                Math.min(255, Math.round(Color.blue(color) * factor)));
+    }
+
+    private static int darken(int color, float factor) {
+        return Color.rgb(Math.round(Color.red(color) * factor),
+                Math.round(Color.green(color) * factor),
+                Math.round(Color.blue(color) * factor));
+    }
+
     private void drawGoldButton(Canvas canvas, RectF rect, String title, String subtitle, boolean primary) {
+        if (primary) {
+            // Breathing glow so the primary action always reads as "press me".
+            float glow = 0.5f + 0.5f * (float) Math.sin(uiClock * 3.4f);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2.6f));
+            paint.setMaskFilter(new BlurMaskFilter(dp(6f), BlurMaskFilter.Blur.NORMAL));
+            paint.setColor(Color.argb(Math.round(60 + 90 * glow), 255, 225, 146));
+            canvas.drawRoundRect(rect, dp(8f), dp(8f), paint);
+            paint.setMaskFilter(null);
+        }
         drawMetalPanel(canvas, rect, primary, primary ? BRIGHT_GOLD : GOLD);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(UI_MEDIUM);
@@ -2912,7 +3819,7 @@ public final class ArcaneDuelView extends View {
         canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
         RectF panel = new RectF(dp(28f), getHeight() * 0.24f, getWidth() - dp(28f), getHeight() * 0.68f);
         drawMetalPanel(canvas, panel, true, resultTitle.contains("ASCENDANT") ? BRIGHT_GOLD : DANGER);
-        drawArcaneCrest(canvas, panel.centerX(), panel.top + dp(70f), dp(45f), duelClock * 13f);
+        drawArcaneCrest(canvas, panel.centerX(), panel.top + dp(70f), dp(45f), uiClock * 13f);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(UI_MEDIUM);
         paint.setTextSize(sp(24f));
@@ -2933,6 +3840,19 @@ public final class ArcaneDuelView extends View {
         drawGoldButton(canvas, secondaryButton, "RETURN TO SANCTUM", "change loadout", false);
     }
 
+    private void drawShockwaves(Canvas canvas) {
+        for (Shockwave wave : shockwaves) {
+            float a = clamp(wave.life / wave.maxLife, 0f, 1f);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1.2f) + dp(2.6f) * a);
+            paint.setColor(Color.argb(Math.round(190 * a), Color.red(wave.color), Color.green(wave.color), Color.blue(wave.color)));
+            canvas.drawCircle(wave.x, wave.y, wave.radius, paint);
+            paint.setStrokeWidth(dp(0.8f));
+            paint.setColor(Color.argb(Math.round(90 * a), 255, 255, 250));
+            canvas.drawCircle(wave.x, wave.y, wave.radius * 0.82f, paint);
+        }
+    }
+
     private void drawParticles(Canvas canvas) {
         for (Particle particle : particles) {
             float a = clamp(particle.life / Math.max(0.001f, particle.maxLife), 0f, 1f);
@@ -2947,18 +3867,25 @@ public final class ArcaneDuelView extends View {
     private void drawFloatingText(Canvas canvas) {
         for (FloatingText text : floatingTexts) {
             float a = clamp(text.life / Math.max(0.001f, text.maxLife), 0f, 1f);
+            // Pop-in: oversized on arrival, settling to normal size.
+            float pop = 1f + Math.max(0f, a - 0.72f) * 1.6f;
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setTypeface(UI_MEDIUM);
-            paint.setTextSize(sp(9.5f));
+            paint.setLetterSpacing(0.06f);
+            paint.setTextSize(sp(9.5f) * pop);
+            paint.setColor(Color.argb(Math.round(150 * a), 5, 5, 10));
+            canvas.drawText(text.text, text.x + dp(1f), text.y + dp(1f), paint);
             paint.setColor(Color.argb(Math.round(255 * a), Color.red(text.color), Color.green(text.color), Color.blue(text.color)));
             canvas.drawText(text.text, text.x, text.y, paint);
+            paint.setLetterSpacing(0f);
         }
     }
 
     private int profileColor(Profile profile) {
         if (profile == null) return BRIGHT_GOLD;
         float[] values = {profile.heat, profile.moisture, profile.impulse, profile.mass,
-                profile.cold, profile.charge, profile.aether, profile.entropy};
+                profile.cold, profile.charge, profile.aether, profile.entropy,
+                profile.radiance, profile.growth};
         Element[] elements = Element.values();
         float total = 0f;
         float r = 0f, g = 0f, b = 0f;
@@ -2974,7 +3901,8 @@ public final class ArcaneDuelView extends View {
     }
 
     private void drawProfilePips(Canvas canvas, Profile p, float cx, float cy, float radius) {
-        float[] values = {p.heat, p.moisture, p.impulse, p.mass, p.cold, p.charge, p.aether, p.entropy};
+        float[] values = {p.heat, p.moisture, p.impulse, p.mass, p.cold, p.charge, p.aether, p.entropy,
+                p.radiance, p.growth};
         Element[] elements = Element.values();
         int shown = 0;
         for (int i = 0; i < values.length; i++) if (values[i] > 0.08f) shown++;
@@ -3002,6 +3930,15 @@ public final class ArcaneDuelView extends View {
     private void spawnImpact(float x, float y, int color, int count) {
         spawnCastParticles(x, y, color, count);
         spawnRing(x, y, color, dp(28f));
+    }
+
+    private void spawnShockwave(float x, float y, int color, float targetRadius) {
+        shockwaves.add(new Shockwave(x, y, color, targetRadius));
+    }
+
+    private void addShake(float magnitude) {
+        shakeTimer = Math.max(shakeTimer, 0.28f);
+        shakeMagnitude = Math.max(shakeMagnitude * (shakeTimer > 0f ? 1f : 0f), magnitude);
     }
 
     private void spawnRing(float x, float y, int color, float radius) {
@@ -3137,6 +4074,44 @@ public final class ArcaneDuelView extends View {
         Profile profile = new Profile();
     }
 
+    /** Per-duel lane modifiers rolled at combat start; lane choice is positional strategy. */
+    private enum LaneTrait {
+        LEY_CURRENT("Ley Current", "spells travel faster"),
+        BEDROCK("Bedrock", "constructs are sturdier"),
+        WELLSPRING("Wellspring", "owned node grants mana"),
+        WILD_MAGIC("Wild Magic", "reactions run hotter"),
+        ASHEN_GROUND("Ashen Ground", "fields linger longer"),
+        THIN_VEIL("Thin Veil", "node charges faster");
+
+        final String label;
+        final String subtitle;
+
+        LaneTrait(String label, String subtitle) {
+            this.label = label;
+            this.subtitle = subtitle;
+        }
+    }
+
+    private static final class Shockwave {
+        final float x;
+        final float y;
+        final int color;
+        float radius;
+        final float speed;
+        float life;
+        final float maxLife;
+
+        Shockwave(float x, float y, int color, float targetRadius) {
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.radius = targetRadius * 0.18f;
+            this.maxLife = 0.45f;
+            this.life = maxLife;
+            this.speed = (targetRadius - radius) / maxLife;
+        }
+    }
+
     private final class Entity {
         Kind kind;
         final int owner;
@@ -3160,10 +4135,15 @@ public final class ArcaneDuelView extends View {
         boolean empowered;
         boolean anchored;
         boolean bound;
+        boolean hexed;
+        boolean swift;
+        boolean hexWaiting;
+        boolean riftBoosted;
         boolean passedNode;
         boolean relayed;
         boolean seekingDone;
         boolean beamResolved;
+        Entity riftedBy;
         String label;
         final ArrayList<PointF> trail = new ArrayList<PointF>();
 
