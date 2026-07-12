@@ -35,13 +35,15 @@ jobs:
           cache-provider: basic
 
       - name: Lint and build debug APK
-        run: gradle --no-daemon lintDebug assembleDebug
+        run: gradle --no-daemon --stacktrace --info lintDebug assembleDebug
 
       - name: Upload APK and lint report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sigilbound-debug-${{ github.sha }}
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             app/build/reports/lint-results-debug.html
-          if-no-files-found: error
+            app/build/reports/lint-results-debug.txt
+          if-no-files-found: warn
