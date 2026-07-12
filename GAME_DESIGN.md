@@ -1,129 +1,139 @@
-# Sigilbound v1.3 — Readable Syntax
+# Sigilbound v1.4 — Arcane Architecture
 
-## Goals
+## Design objective
 
-1. Make every hostile cast readable before it resolves.
-2. Slow battlefield travel enough that each lane becomes a visible contest rather than a reaction test against sudden damage.
-3. Replace fixed two-element recipes with a compositional spell compiler.
-4. Preserve the fast tactile identity of drawing sigils while allowing deeper authored playstyles through prepared spell executables.
+Sigilbound should feel like a real-time card battler whose cards are partially written during play. The player does not merely choose an attack; they author a small executable sentence, deploy it into one of three simultaneous lane contests, and then exploit or alter the persistent state left behind by previous spells.
 
-## Duel Rhythm
+The redesign has four pillars:
 
-A duel alternates between **reading**, **writing**, and **resolving**.
+1. **Readable authorship:** the input flow always reads Sigils → Form → Clauses → Lane → Cast.
+2. **Compositional depth:** elemental properties and generic clauses combine through shared rules rather than a list of handcrafted pair recipes.
+3. **Arena memory:** nodes, fields, traps, constructs, and enchantments persist long enough for one spell to set up another.
+4. **Prepared playstyles:** an unlimited executable library lets players construct repeatable loops, while Ink, mana surcharge, and cooldowns keep manual writing relevant.
 
-- The rival visibly scribes a spell for several seconds. Its element glyphs, target lane, form, and clauses are revealed in stages.
-- The player may answer manually with a fresh formula or deploy a prepared executable.
-- Spells then move through one of three lanes at the selected match tempo. Multiple casts can coexist in each lane, producing small simultaneous duels.
+## Duel topology
 
-The default rules are intentionally slow and legible. Faster rules remain available for experienced players.
+The arena still has three lanes, but every lane now contains a ley node at mid-field. A lane therefore contains several overlapping contests:
 
-## Spell Grammar
+- spell versus spell interception;
+- construct versus pressure;
+- control of the ley node;
+- persistent field ownership;
+- trap and trigger positioning;
+- future relay routes.
 
-A manual spell has this syntax:
+A projectile that passes through an allied node absorbs part of the node profile and gains force. A hostile node weakens it and can produce a reaction. Glyph forms claim and tune nodes. Relay clauses route a spell through an allied charged node into a more useful lane. This turns the three lanes from simple projectile tracks into a small programmable board.
 
-`CORE ELEMENT → up to 2 MODIFIER ELEMENTS → FORM RUNE → up to 2 CLAUSES → LANE`
+## Spell grammar
 
-### Ordered elements
+`ELEMENT × 1–4 → FORM × 1 → CLAUSE × 0–3 → LANE → CAST`
 
-The first element is the core identity and determines the strongest visual and counter affinity. The second and third elements contribute weighted physical channels rather than selecting a handcrafted recipe.
+### Ordered elemental core
 
-- **Fire:** heat, volatility, damage, burning.
-- **Water:** moisture, breadth, damping, slowing.
-- **Wind:** impulse, speed, repetition pressure.
-- **Stone:** mass, cohesion, durability, impact.
+Each position has a descending weight. The first sigil establishes the strongest identity, while later sigils modify physical and arcane channels. The Prism Lens preserves more of the later positions.
 
-The compiler derives heat, moisture, impulse, mass, cohesion, and volatility from the complete ordered sequence. Threshold effects emerge from those channels:
-
-- heat + moisture creates vapor and obscuring steam;
-- heat + mass leaves molten residue;
-- moisture + impulse creates chilling drag;
-- mass + impulse creates fracture and shrapnel;
-- excess cohesion makes constructs tougher;
-- excess volatility makes effects stronger but less stable.
-
-A third element can satisfy several thresholds simultaneously, so the same form can produce very different behavior without a table of named pair recipes.
+- **Fire:** heat, volatility, ignition pressure.
+- **Water:** moisture, cohesion, damping.
+- **Wind:** impulse, spread, instability.
+- **Stone:** mass, cohesion, structural durability.
+- **Frost:** cold, brittleness, thermal opposition.
+- **Lightning:** charge, impulse, volatile speed.
+- **Aether:** resonance, linking, stable transmission.
+- **Void:** entropy, consumption, destabilization.
 
 ### Form runes
 
-- **Lance:** moving projectile and primary interception tool.
-- **Ward:** persistent blocking construct.
-- **Orbit:** familiar that periodically emits compiled bolts.
-- **Burst:** delayed field event placed deep in a lane.
+- **Lance:** a traveling spell body; strongest general interception tool.
+- **Ward:** a durable blocking construct whose profile determines resilience and side effects.
+- **Orbit:** a familiar that repeatedly emits reduced copies of its profile.
+- **Burst:** a delayed event placed deeper in a lane.
+- **Beam:** a near-immediate piercing channel that can strike a construct or caster and interact with a node.
+- **Glyph:** a persistent mid-field inscription that attunes a ley node and modifies traffic through its radius.
 
-### Clause runes
+### Ordered clauses
 
-Any spell can contain up to two clauses.
+Clauses operate on the compiled program, so they can modify every element sequence and form.
 
-- **Echo:** repeats the compiled spell after a delay at reduced strength.
-- **Fork:** deploys reduced branches into adjacent lanes.
-- **Anchor:** slows movement while increasing persistence, mass, construct durability, and residue strength.
+1. **Echo:** schedules a reduced second execution.
+2. **Fork:** creates reduced adjacent-lane branches.
+3. **Anchor:** trades speed for size, stability, durability, and persistence.
+4. **Seek:** retargets once near mid-field based on hostile pressure.
+5. **Relay:** uses charged allied ley nodes to route the spell into another lane.
+6. **Trigger:** stores the rest of the sentence as a trap and releases it when hostile traffic enters.
+7. **Bind:** merges the profile into an allied spell or construct; if none exists, a temporary waiting enchantment remains.
+8. **Consume:** sacrifices an allied field or construct in the chosen lane, merging its profile and converting its remaining value into power.
 
-Because clauses operate on the compiled spell rather than on bespoke named recipes, combinations such as Echo + Fork or Fork + Anchor work on every element sequence and every form.
+Clause order is retained in the program and surfaced in UI. Some effects are structurally resolved before deployment—Consume, Bind, and Trigger—while Echo and Fork schedule later executions and Anchor, Seek, and Relay alter the resulting entities.
 
-## Enemy Telegraphing
+## Runtime interaction model
 
-The AI no longer creates spells instantly. It creates an `EnemyCastIntent` and reveals it over a channel period.
+Every spell entity carries a profile. Interactions compare profiles at runtime.
 
-1. Target lane appears immediately.
-2. Element glyphs are drawn one by one.
-3. Form rune is revealed.
-4. Clauses are revealed.
-5. The spell launches.
+### Persistent modification
 
-Apprentice channels are long and contain idle gaps. Adept channels are moderate. Archmage channels are faster but still visible.
+- Allied fields gradually add their profile to passing projectiles and can accelerate or reinforce them.
+- Hostile wet or cold fields slow travel; entropy erodes damage.
+- Bound spells merge the enchanter profile into the target and increase size, damage, health, and remaining lifetime according to stability.
+- Consume removes a persistent allied object and adds a large fraction of its channels to the new spell.
+- Ley nodes accumulate a blended profile from Glyphs and passing spells.
 
-## Tempo Rules
+### Reactions
 
-- **Ritual:** 42% projectile travel speed. Default.
-- **Duel:** 62% projectile travel speed.
-- **Blitz:** 84% projectile travel speed.
+- **Steam Veil:** heat and moisture create an obscuring/damping field.
+- **Thermal Shock:** heat and cold destroy stability and can burst both spell bodies.
+- **Conduction:** charge follows moisture and can chain into adjacent lanes.
+- **Molten Field:** heat and mass leave a damaging persistent field.
+- **Blizzard:** cold and impulse create a slowing field.
+- **Shatter:** mass, cold, and impulse generate lane-spreading shards.
+- **Null Flux:** aether and entropy erase or heavily weaken both effects.
+- **Corrosion:** entropy combined with moisture/cohesion creates construct-eating fields.
+- **Resonance:** otherwise comparable forces partially cancel or the stronger body survives at reduced power.
 
-Tempo affects projectile movement and enemy channel pacing, but not touch recognition.
+## Arena rules
 
-## Executable Decks
+- **Astral Court:** neutral, coherent node profiles; ley charge persists longer and favors resonance/linking strategies.
+- **Ember Vault:** ambient heat and volatility empower ignition and molten residue.
+- **Tidal Archive:** ambient moisture improves conduction and slows projectile travel.
+- **Shattered Crown:** ambient impulse and volatility strengthen forked pressure and shatter behavior.
 
-Players own a three-slot grimoire edited outside combat. Each slot stores a complete spell program: up to three elements, one form, and up to two clauses.
+These are match rules rather than cosmetics: the same executable can behave differently in each arena because the compiler and node base profiles receive the arena channel.
 
-During combat, an executable can be armed with one tap and deployed by selecting a lane.
+## Executable economy
 
-### Convenience cost
+The Grimoire is an unlimited ordered library. Four entries are visible in combat at once, with paging controls for quick selection.
 
-- Executables cost 25% more mana.
-- Executables consume one **Ink**.
-- The player begins with three Ink.
-- Accurate manual glyphs restore Ink, rewarding alternation between prepared and hand-written spells.
-- Each executable slot has a short cooldown.
+A saved executable loads all writing stages and moves directly to lane selection. This convenience costs:
 
-This creates decks with recognizable loops without allowing prepared spells to replace manual skill.
+- one Ink;
+- 10–25% extra mana depending on artifact;
+- a per-program cooldown.
 
-## Readability Rules
+Manual glyph accuracy restores Ink. Therefore a deck is a tactical vocabulary, not a replacement for live composition.
 
-- Rival target lane is tinted from the start of the cast.
-- Rival syntax is shown as progressively drawn glyphs and readable form/clause chips above the battlefield.
-- Projectiles carry element pips and longer trails.
-- Default projectile speed is substantially lower.
-- Large impact text distinguishes COUNTER, VAPOR, FRACTURE, BLOCK, and RESIDUE.
-- UI copy uses a plain system sans-serif face, medium emphasis rather than synthetic bold, and no labels below roughly 10.5sp.
-- Manual and executable modes are visually separated.
+## Artifacts
 
-## AI Profiles
+- **Prism Lens:** later element slots retain more weight.
+- **Ashen Quill:** accurate manual glyphs restore more Ink.
+- **Aegis Bell:** wards and orbiting constructs gain durability and support pulses.
+- **Ley Key:** nodes charge faster and Relay costs less.
+- **Mnemonic Crown:** executable surcharge is reduced, but manual Ink recovery is weaker.
 
-### Apprentice
-- Long initial grace period.
-- 5–7 second channels.
-- Long recovery between casts.
-- Mostly one-element spells, rare clauses, imperfect counters.
+## AI readability
 
-### Adept
-- 3.5–5 second channels.
-- Uses two elements and occasional clauses.
-- Reads lane pressure with moderate accuracy.
+The rival builds the same program structure. Its target lane appears immediately, elemental sigils are progressively revealed, then form and clauses become readable before resolution. Difficulty changes syntax density, channel duration, accuracy, and recovery—not hidden projectile speed.
 
-### Archmage
-- 2.5–4 second channels.
-- Uses three elements and clause pairs.
-- Better counter selection and lane pressure.
+## UX and visual language
 
-## Scope of v1.3
+The combat composer is a single staged panel:
 
-This version implements AI telegraphing, selectable tempo, three-element compilation, generic channel-derived spell stats, three compositional clauses, a three-slot executable grimoire, Ink economy, and GitHub build automation. Network transport remains outside this standalone prototype.
+1. Draw up to four sigils on a large canvas.
+2. Select one form from six cards.
+3. Select up to three ordered clauses; order badges remain visible.
+4. Select a lane with live ley ownership shown.
+5. Review the compiled profile, resource cost, lane, and reaction identity, then press Cast.
+
+The visual direction uses near-black ink, charcoal metal, warm gold linework, restrained ivory text, arena-specific accents, elemental neon, large readable sans-serif labels, and procedural arcane geometry. Spell bodies use trails, radial bloom, profile pips, rotating inscriptions, impact rings, and reaction labels to make state changes visible.
+
+## Scope and next steps
+
+Version 1.4 implements the expanded compiler, persistent arena state, unlimited executable library, revised AI grammar, and complete procedural UI/VFX pass. Future work should add deterministic simulation tests, real network transport, accessible glyph alternatives, saved library reordering/naming, sound design, and authored character/archetype progression.
