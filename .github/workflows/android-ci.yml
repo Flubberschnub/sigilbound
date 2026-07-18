@@ -27,6 +27,9 @@ jobs:
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/engine.js
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/app.js
 
+      - name: Run deterministic game-engine smoke test
+        run: node /tmp/chronocrypt-source/chronocrypt-v1.3/smoke-test.js
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
