@@ -26,6 +26,7 @@ jobs:
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/effects.js
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/engine.js
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/app.js
+          node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/privacy.js
 
       - name: Run deterministic game-engine smoke test
         run: node /tmp/chronocrypt-source/chronocrypt-v1.3/smoke-test.js
@@ -50,19 +51,22 @@ jobs:
       - name: Build debug APK
         run: gradle -p /tmp/chronocrypt-source/chronocrypt-v1.3 --no-daemon --stacktrace assembleDebug
 
-      - name: Verify and name APK
+      - name: Verify and package artifacts
         run: |
           APK=/tmp/chronocrypt-source/chronocrypt-v1.3/app/build/outputs/apk/debug/app-debug.apk
           $ANDROID_HOME/build-tools/35.0.0/zipalign -c -P 16 -v 4 "$APK"
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs "$APK"
           cp "$APK" Chronocrypt-Causal-War-v1.3.0.apk
           sha256sum Chronocrypt-Causal-War-v1.3.0.apk > Chronocrypt-Causal-War-v1.3.0-SHA256.txt
+          cd /tmp/chronocrypt-source
+          zip -qr /home/runner/work/sigilbound/sigilbound/Chronocrypt-Causal-War-Source-v1.3.0.zip chronocrypt-v1.3 -x '*/build/*' '*/.gradle/*'
 
-      - name: Upload Chronocrypt APK
+      - name: Upload Chronocrypt release bundle
         uses: actions/upload-artifact@v4
         with:
           name: Chronocrypt-Causal-War-v1.3.0
           path: |
             Chronocrypt-Causal-War-v1.3.0.apk
             Chronocrypt-Causal-War-v1.3.0-SHA256.txt
+            Chronocrypt-Causal-War-Source-v1.3.0.zip
           if-no-files-found: error
