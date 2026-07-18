@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -62,12 +62,26 @@ jobs:
           cd /tmp/chronocrypt-source
           zip -qr /home/runner/work/sigilbound/sigilbound/Chronocrypt-Causal-War-Source-v1.3.0.zip chronocrypt-v1.3 -x '*/build/*' '*/.gradle/*'
 
+      - name: Publish direct-download files to temporary branch
+        run: |
+          mkdir -p /tmp/chronocrypt-dist
+          cp Chronocrypt-Causal-War-v1.3.0.apk Chronocrypt-Causal-War-v1.3.0-SHA256.txt Chronocrypt-Causal-War-Source-v1.3.0.zip /tmp/chronocrypt-dist/
+          git fetch origin chronocrypt-v1.3-temp-build
+          git checkout -B chronocrypt-v1.3-temp-build origin/chronocrypt-v1.3-temp-build
+          mkdir -p chronocrypt-dist
+          cp /tmp/chronocrypt-dist/* chronocrypt-dist/
+          git config user.name 'Chronocrypt Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add chronocrypt-dist
+          git commit -m 'Publish Chronocrypt v1.3 artifacts [skip ci]' || true
+          git push origin HEAD:chronocrypt-v1.3-temp-build
+
       - name: Upload Chronocrypt release bundle
         uses: actions/upload-artifact@v4
         with:
           name: Chronocrypt-Causal-War-v1.3.0
           path: |
-            Chronocrypt-Causal-War-v1.3.0.apk
-            Chronocrypt-Causal-War-v1.3.0-SHA256.txt
-            Chronocrypt-Causal-War-Source-v1.3.0.zip
+            /tmp/chronocrypt-dist/Chronocrypt-Causal-War-v1.3.0.apk
+            /tmp/chronocrypt-dist/Chronocrypt-Causal-War-v1.3.0-SHA256.txt
+            /tmp/chronocrypt-dist/Chronocrypt-Causal-War-Source-v1.3.0.zip
           if-no-files-found: error
