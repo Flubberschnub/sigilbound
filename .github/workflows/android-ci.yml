@@ -25,6 +25,7 @@ jobs:
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/cards.js
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/effects.js
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/engine.js
+          node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/rules.js
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/app.js
           node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/privacy.js
 
