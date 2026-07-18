@@ -1,8 +1,8 @@
-name: Android CI
+name: Chronocrypt v1.3 Temporary Build
 
 on:
   push:
-    branches: ['**']
+    branches: ['chronocrypt-v1.3-temp-build']
   pull_request:
   workflow_dispatch:
 
@@ -14,31 +14,52 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out source
-        uses: actions/checkout@v6
+      - name: Check out CI repository
+        uses: actions/checkout@v4
+
+      - name: Fetch isolated Chronocrypt source branch
+        run: git clone --depth 1 --branch chronocrypt-v1.3-build https://github.com/Flubberschnub/hello-world.git /tmp/chronocrypt-source
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/cards.js
+          node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/effects.js
+          node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/engine.js
+          node --check /tmp/chronocrypt-source/chronocrypt-v1.3/app/src/main/assets/app.js
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 9.4.1
-        uses: gradle/actions/setup-gradle@v6
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.4.1'
-          cache-provider: basic
+          gradle-version: '8.9'
 
-      - name: Lint and build debug APK
-        run: gradle --no-daemon --stacktrace --info lintDebug assembleDebug
+      - name: Build debug APK
+        run: gradle -p /tmp/chronocrypt-source/chronocrypt-v1.3 --no-daemon --stacktrace assembleDebug
 
-      - name: Upload APK and lint report
-        if: always()
+      - name: Verify and name APK
+        run: |
+          APK=/tmp/chronocrypt-source/chronocrypt-v1.3/app/build/outputs/apk/debug/app-debug.apk
+          $ANDROID_HOME/build-tools/35.0.0/zipalign -c -P 16 -v 4 "$APK"
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs "$APK"
+          cp "$APK" Chronocrypt-Causal-War-v1.3.0.apk
+          sha256sum Chronocrypt-Causal-War-v1.3.0.apk > Chronocrypt-Causal-War-v1.3.0-SHA256.txt
+
+      - name: Upload Chronocrypt APK
         uses: actions/upload-artifact@v4
         with:
-          name: sigilbound-debug-${{ github.sha }}
+          name: Chronocrypt-Causal-War-v1.3.0
           path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/reports/lint-results-debug.html
-            app/build/reports/lint-results-debug.txt
-          if-no-files-found: warn
+            Chronocrypt-Causal-War-v1.3.0.apk
+            Chronocrypt-Causal-War-v1.3.0-SHA256.txt
+          if-no-files-found: error
